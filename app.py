@@ -390,7 +390,7 @@ elif page == "📊 Analysis":
             st.info("Available columns: " + ", ".join(df.columns))
         else:
             # Sales by Category
-            st.subheader("🏷️ Sales by Category")
+            st.subheader("🏷️ Sales Distribution by Category")
             category_sales = df.groupby("Category")["UnitsSold"].agg(['sum', 'mean', 'count']).reset_index()
             category_sales.columns = ['Category', 'Total_Sales', 'Avg_Sales', 'Records']
             
@@ -398,15 +398,45 @@ elif page == "📊 Analysis":
             col1, col2 = st.columns(2)
             
             with col1:
-                st.write("**Category Performance:**")
+                st.write("**📊 Category Performance Table:**")
                 category_sales['Avg_Sales'] = category_sales['Avg_Sales'].round(1)
                 st.dataframe(category_sales, use_container_width=True)
             
             with col2:
-                st.write("**Sales Distribution:**")
+                st.write("**🥧 Sales Distribution (%):**")
+                # Create pie chart data with percentages
+                total_sales = category_sales['Total_Sales'].sum()
+                pie_data = []
+                colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
+                
                 for idx, row in category_sales.iterrows():
-                    percentage = (row['Total_Sales'] / category_sales['Total_Sales'].sum()) * 100
-                    st.write(f"**{row['Category']}:** {row['Total_Sales']:,} units ({percentage:.1f}%)")
+                    percentage = (row['Total_Sales'] / total_sales) * 100
+                    pie_data.append({
+                        'Category': row['Category'],
+                        'Sales': row['Total_Sales'],
+                        'Percentage': percentage
+                    })
+                
+                # Display pie chart as text with emojis and percentages
+                pie_df = pd.DataFrame(pie_data).sort_values('Sales', ascending=False)
+                for idx, row in pie_df.iterrows():
+                    # Create a visual bar using Unicode blocks
+                    bar_length = int(row['Percentage'] / 5)  # Scale down for display
+                    bar = "█" * bar_length + "░" * (20 - bar_length)
+                    st.write(f"**{row['Category']}:** {row['Sales']:,.0f} units ({row['Percentage']:.1f}%)")
+                    st.write(f"`{bar}`")
+                
+                # Simple pie chart using matplotlib-style display
+                chart_data = category_sales.set_index('Category')['Total_Sales']
+                
+                # Create a simple visual representation
+                st.write("**📈 Visual Chart:**")
+                
+                # Since we can't use plotly, let's create a bar chart that looks like segments
+                colors_list = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2']
+                
+                # Streamlit's built-in chart with custom styling
+                st.bar_chart(chart_data, color=colors_list[0] if len(colors_list) > 0 else None)
 
             # Time-based analysis (simple)
             if 'Date' in df.columns and not df['Date'].isna().all():
@@ -425,7 +455,8 @@ elif page == "📊 Analysis":
                 # Simple line chart using st.line_chart
                 if len(monthly_sales) > 1:
                     chart_data = monthly_sales.set_index('YearMonth')
-                    st.line_chart(chart_data['UnitsSold'])
+                    # Add some styling to the line chart
+                    st.line_chart(chart_data['UnitsSold'], color='#1f77b4')  # Nice blue color
 
                 # REPLACEMENT FOR HEATMAP - Sales Pattern Analysis
                 st.markdown("---")
@@ -448,9 +479,9 @@ elif page == "📊 Analysis":
                         percentage = (row['Total_Sales'] / daily_pattern['Total_Sales'].sum()) * 100
                         st.write(f"**{row['Day']}:** {row['Total_Sales']:,} units ({percentage:.1f}%)")
                     
-                    # Chart
+                    # Chart with nice blue gradient colors
                     chart_data = daily_pattern.set_index('Day')['Total_Sales']
-                    st.bar_chart(chart_data)
+                    st.bar_chart(chart_data, color='#4682b4')  # Steel blue color
                 
                 with col2:
                     st.write("**⚡ Product Velocity Analysis:**")
@@ -776,26 +807,6 @@ st.sidebar.markdown("---")
 st.sidebar.markdown("**📦 Ahva Dashboard v1.5**")
 st.sidebar.markdown("*Basic Analytics Platform*")
 st.sidebar.markdown("Built with ❤️ using Streamlit")
-
-# Instructions for full version
-st.sidebar.markdown("---")
-st.sidebar.info("""
-**🚀 Want Advanced Features?**
-
-Add this to requirements.txt:
-```
-plotly>=5.14.0
-matplotlib>=3.5.0
-seaborn>=0.11.0
-scikit-learn>=1.1.0
-```
-
-Then you'll get:
-- Interactive charts
-- Machine Learning forecasts
-- Advanced visualizations
-- Heatmaps & trends
-""")
 
 # Debug mode
 if st.sidebar.checkbox("🔧 Debug Mode"):

@@ -559,11 +559,8 @@ elif page == "🔮 Forecasting":
                             # Get product data
                             product_data = df[df['Product'] == selected_product].iloc[-1]
                             
-                            # Create future dates - FIXED VERSION
+                            # Create future dates
                             last_date = df['Date'].max()
-                            if not isinstance(last_date, pd.Timestamp):
-                                last_date = pd.to_datetime(last_date)
-                            
                             future_dates = pd.date_range(
                                 start=last_date + pd.Timedelta(days=1), 
                                 periods=forecast_days, 

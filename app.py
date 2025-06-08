@@ -1,7 +1,14 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import plotly.express as px
+import plotly.graph_objects as go
 from datetime import datetime, timedelta
+import seaborn as sns
+import matplotlib.pyplot as plt
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_absolute_error, mean_squared_error
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -77,20 +84,20 @@ st.markdown("""
         height: 2px;
         background: linear-gradient(90deg, #667eea, #764ba2);
     }
-    .highlight-box {
+    .forecast-highlight {
         background: #f8f9fa;
         padding: 1rem;
         border-radius: 8px;
         border-left: 4px solid #28a745;
         margin: 1rem 0;
     }
-    .warning-box {
-        background: #fff3cd;
+    .recommendation-box {
+        background: linear-gradient(135deg, #ffeaa7 0%, #fab1a0 100%);
         padding: 1rem;
         border-radius: 8px;
-        border-left: 4px solid #ffc107;
         margin: 1rem 0;
-        color: #856404;
+        color: #2d3436;
+        font-weight: 500;
     }
     @media (max-width: 768px) {
         .kpi-container { flex-direction: column; }
@@ -113,7 +120,6 @@ def clean_data(df):
                 return pd.NaT
             if isinstance(date_val, (int, float)):
                 try:
-                    # המרה ממספר סידורי של Excel
                     return pd.to_datetime('1899-12-30') + pd.Timedelta(days=date_val)
                 except:
                     return pd.NaT
@@ -123,8 +129,6 @@ def clean_data(df):
                 return pd.NaT
         
         df_clean['Date'] = df_clean['Date'].apply(convert_date)
-        
-        # הסרת תאריכים לא תקינים
         invalid_dates = df_clean['Date'].isna().sum()
         if invalid_dates > 0:
             df_clean = df_clean.dropna(subset=['Date'])
@@ -132,34 +136,15 @@ def clean_data(df):
     # תיקון שמות קטגוריות לעקביות
     if 'Category' in df_clean.columns:
         category_mapping = {
-            'חלוה': 'Halva',
-            'חלווה': 'Halva',
-            'halva': 'Halva',
-            'HALVA': 'Halva',
-            'טחינה': 'Tahini',
-            'TAHINI': 'Tahini',
-            'tahini': 'Tahini',
-            'חטיפים': 'Snacks',
-            'SNACKS': 'Snacks',
-            'snacks': 'Snacks',
-            'עוגות': 'Cakes',
-            'CAKES': 'Cakes',
-            'cakes': 'Cakes',
-            'עוגיות': 'Cookies',
-            'COOKIES': 'Cookies',
-            'cookies': 'Cookies',
-            'מאפים': 'Pastries',
-            'PASTRIES': 'Pastries',
-            'pastries': 'Pastries',
-            'סירופ': 'Syrup',
-            'SYRUP': 'Syrup',
-            'syrup': 'Syrup'
+            'חלוה': 'Halva', 'חלווה': 'Halva', 'halva': 'Halva', 'HALVA': 'Halva',
+            'טחינה': 'Tahini', 'TAHINI': 'Tahini', 'tahini': 'Tahini',
+            'חטיפים': 'Snacks', 'SNACKS': 'Snacks', 'snacks': 'Snacks',
+            'עוגות': 'Cakes', 'CAKES': 'Cakes', 'cakes': 'Cakes',
+            'עוגיות': 'Cookies', 'COOKIES': 'Cookies', 'cookies': 'Cookies',
+            'מאפים': 'Pastries', 'PASTRIES': 'Pastries', 'pastries': 'Pastries',
+            'סירופ': 'Syrup', 'SYRUP': 'Syrup', 'syrup': 'Syrup'
         }
-        
-        # החלפת שמות קטגוריות
         df_clean['Category'] = df_clean['Category'].replace(category_mapping)
-        
-        # Capitalize first letter for consistency
         df_clean['Category'] = df_clean['Category'].str.title()
     
     # הסרת שורות חסרות מידע חיוני
@@ -176,66 +161,85 @@ def clean_data(df):
     for col in numeric_columns:
         if col in df_clean.columns:
             df_clean[col] = pd.to_numeric(df_clean[col], errors='coerce')
-            # החלפת ערכים שליליים בערך מוחלט
             negative_count = (df_clean[col] < 0).sum()
             if negative_count > 0:
                 df_clean[col] = df_clean[col].abs()
     
-    # הצגת הודעה על תיקון קטגוריות
     if 'Category' in df_clean.columns:
         unique_categories = sorted(df_clean['Category'].unique())
         st.success(f"✅ Categories standardized: {', '.join(unique_categories)}")
     
     return df_clean
 
-def simple_forecast(df, product_name, days=30):
-    """חיזוי פשוט בלי Machine Learning"""
-    product_data = df[df['Product'] == product_name]
+@st.cache_data
+def prepare_forecast_data(df):
+    """הכנת נתונים לחיזוי"""
+    if len(df) == 0:
+        return df
     
-    if len(product_data) == 0:
-        return None
+    df_forecast = df.copy()
     
-    # חישוב ממוצע מכירות
-    avg_sales = product_data['UnitsSold'].mean()
+    # פיצ'רי זמן
+    df_forecast['Year'] = df_forecast['Date'].dt.year
+    df_forecast['Month'] = df_forecast['Date'].dt.month
+    df_forecast['DayOfWeek'] = df_forecast['Date'].dt.dayofweek
+    df_forecast['WeekOfYear'] = df_forecast['Date'].dt.isocalendar().week
+    df_forecast['Quarter'] = df_forecast['Date'].dt.quarter
+    df_forecast['IsWeekend'] = df_forecast['DayOfWeek'].isin([5, 6]).astype(int)
     
-    # חישוב מגמה (אם יש מספיק נתונים)
-    if len(product_data) > 7:
-        recent_avg = product_data.tail(7)['UnitsSold'].mean()
-        older_avg = product_data.head(7)['UnitsSold'].mean()
-        trend = (recent_avg - older_avg) / len(product_data) if older_avg > 0 else 0
+    # פיצ'רי מוצר
+    df_forecast['Product_encoded'] = pd.Categorical(df_forecast['Product']).codes
+    df_forecast['Category_encoded'] = pd.Categorical(df_forecast['Category']).codes
+    
+    # פיצ'רי מלאי ומחיר
+    df_forecast['PricePerUnit'] = pd.to_numeric(df_forecast.get('מחיר ליחידה (₪)', 0), errors='coerce').fillna(0)
+    df_forecast['WeightPerUnit'] = pd.to_numeric(df_forecast.get('משקל יחידה (גרם)', 0), errors='coerce').fillna(0)
+    
+    # פיצ'רי מכירות היסטוריות
+    df_forecast = df_forecast.sort_values(['Product', 'Date'])
+    df_forecast['Sales_MA_7'] = df_forecast.groupby('Product')['UnitsSold'].transform(
+        lambda x: x.rolling(window=min(7, len(x)), min_periods=1).mean()
+    )
+    df_forecast['Sales_MA_30'] = df_forecast.groupby('Product')['UnitsSold'].transform(
+        lambda x: x.rolling(window=min(30, len(x)), min_periods=1).mean()
+    )
+    
+    return df_forecast
+
+def build_forecast_model(df_forecast):
+    """בניית מודל חיזוי"""
+    if len(df_forecast) < 10:
+        raise ValueError("Not enough data for forecasting")
+    
+    features = [
+        'Month', 'DayOfWeek', 'WeekOfYear', 'Quarter', 'IsWeekend',
+        'Product_encoded', 'Category_encoded', 'Stock', 'PricePerUnit',
+        'WeightPerUnit', 'Sales_MA_7', 'Sales_MA_30'
+    ]
+    
+    X = df_forecast[features].fillna(0)
+    y = df_forecast['UnitsSold']
+    
+    test_size = min(0.2, max(0.1, len(df_forecast) // 10))
+    
+    if len(df_forecast) > 5:
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=42)
     else:
-        trend = 0
+        X_train, X_test, y_train, y_test = X, X, y, y
     
-    # יצירת חיזוי
-    forecast_data = []
-    last_date = df['Date'].max()
+    n_estimators = min(100, max(10, len(X_train) // 2))
+    model = RandomForestRegressor(n_estimators=n_estimators, random_state=42, n_jobs=-1)
+    model.fit(X_train, y_train)
     
-    # וידוא שלast_date הוא Timestamp
-    if not isinstance(last_date, pd.Timestamp):
-        last_date = pd.to_datetime(last_date)
+    y_pred = model.predict(X_test)
+    mae = mean_absolute_error(y_test, y_pred)
+    rmse = np.sqrt(mean_squared_error(y_test, y_pred))
     
-    for i in range(1, days + 1):
-        # שימוש ב-pd.Timedelta במקום timedelta רגיל
-        future_date = last_date + pd.Timedelta(days=i)
-        
-        # חיזוי בסיסי עם מגמה
-        predicted_sales = max(0, avg_sales + (trend * i))
-        
-        # התאמה לעונתיות (יום בשבוע)
-        day_of_week = future_date.weekday()
-        if day_of_week in [5, 6]:  # סוף שבוע
-            predicted_sales *= 0.8
-        
-        forecast_data.append({
-            'Date': future_date,
-            'Predicted_Sales': predicted_sales
-        })
-    
-    return pd.DataFrame(forecast_data)
+    return model, features, mae, rmse
 
 # ========== Navigation ==========
 st.sidebar.markdown("<h2 class='sidebar-title'>🧭 Navigation</h2>", unsafe_allow_html=True)
-page = st.sidebar.radio("Go to:", ["🏠 HOME", "📊 Analysis", "📈 Seasonality", "🔮 Basic Forecast"])
+page = st.sidebar.radio("Go to:", ["🏠 HOME", "📊 Analysis", "📈 Seasonality", "🔮 Forecasting"])
 
 # ========== Session State ==========
 if "df" not in st.session_state:
@@ -247,7 +251,7 @@ if "df_clean" not in st.session_state:
 if page == "🏠 HOME":
     st.markdown("""
     <h1 style='margin-bottom: 10px; text-align: center;'>📦 Ahva Inventory Dashboard</h1>
-    <p style='text-align: center; font-size: 18px; color: #666;'>Sales Analytics & Basic Forecasting Platform</p>
+    <p style='text-align: center; font-size: 18px; color: #666;'>Advanced Analytics & Sales Forecasting Platform</p>
     <hr>
     """, unsafe_allow_html=True)
 
@@ -262,14 +266,11 @@ if page == "🏠 HOME":
             with st.spinner("📊 Loading and analyzing your data..."):
                 df = pd.read_excel(uploaded_file)
                 st.session_state.df = df
-                
-                # ניקוי אוטומטי של הנתונים
                 df_clean = clean_data(df)
                 st.session_state.df_clean = df_clean
             
             st.success("✅ File uploaded and processed successfully!")
             
-            # הצגת נתונים בסיסיים
             col1, col2 = st.columns(2)
             with col1:
                 st.write("**📋 Raw Data Overview:**")
@@ -283,19 +284,16 @@ if page == "🏠 HOME":
                 st.write(f"- Data quality: {(len(df_clean)/len(df)*100):.1f}%")
                 st.write(f"- Ready for analysis: ✅")
             
-            # הצגת דוגמה מהנתונים
             with st.expander("👀 Preview Your Data", expanded=False):
                 st.write("**Sample of your cleaned data:**")
                 st.dataframe(df_clean.head(10))
                 
         except Exception as e:
             st.error(f"❌ Error loading file: {str(e)}")
-            st.write("Please ensure your Excel file contains the required columns: Product, Date, UnitsSold, Stock")
 
     if st.session_state.df_clean is not None:
         df = st.session_state.df_clean
 
-        # Date filter
         st.markdown("---")
         st.subheader("📅 Date Range Filter")
         
@@ -309,26 +307,22 @@ if page == "🏠 HOME":
             with col2:
                 end_date = st.date_input("End Date", value=max_date, min_value=min_date, max_value=max_date)
             
-            # Apply filter
             filtered_df = df[(df['Date'] >= pd.to_datetime(start_date)) & (df['Date'] <= pd.to_datetime(end_date))]
             
             if len(filtered_df) == 0:
                 st.warning("⚠️ No data found in the selected date range.")
-                filtered_df = df  # Fall back to all data
+                filtered_df = df
         else:
             filtered_df = df
-            st.info("ℹ️ Date column not available or contains invalid dates. Showing all data.")
 
         # KPI CALCULATIONS
         st.markdown("---")
         st.subheader("📊 Key Performance Indicators")
         
-        # Calculate KPIs safely
         total_products = filtered_df['Product'].nunique() if 'Product' in filtered_df.columns else 0
         total_stock = int(filtered_df['Stock'].sum()) if 'Stock' in filtered_df.columns else 0
         total_demand = int(filtered_df['UnitsSold'].sum()) if 'UnitsSold' in filtered_df.columns else 0
         
-        # Calculate shortages
         if 'UnitsSold' in filtered_df.columns and 'Stock' in filtered_df.columns:
             shortages = (filtered_df['UnitsSold'] > filtered_df['Stock']).sum()
             filtered_df["ShortageQty"] = (filtered_df["UnitsSold"] - filtered_df["Stock"]).clip(lower=0)
@@ -337,13 +331,8 @@ if page == "🏠 HOME":
             shortages = 0
             missing_units = 0
 
-        # Calculate efficiency metrics
-        if total_stock > 0 and total_demand > 0:
-            efficiency = (total_demand / total_stock) * 100
-        else:
-            efficiency = 0
+        efficiency = (total_demand / total_stock) * 100 if total_stock > 0 else 0
 
-        # Display KPIs
         st.markdown(f"""
         <div class="kpi-container">
             <div class="kpi-card kpi-blue">
@@ -381,175 +370,115 @@ elif page == "📊 Analysis":
     if st.session_state.df_clean is not None:
         df = st.session_state.df_clean.copy()
 
-        # Check required columns
         required_cols = ['Category', 'UnitsSold']
         missing_cols = [col for col in required_cols if col not in df.columns]
         
         if missing_cols:
             st.error(f"❌ Missing required columns: {', '.join(missing_cols)}")
-            st.info("Available columns: " + ", ".join(df.columns))
         else:
-            # Sales by Category
+            # Sales by Category with Plotly Charts
             st.subheader("🏷️ Sales Distribution by Category")
             category_sales = df.groupby("Category")["UnitsSold"].agg(['sum', 'mean', 'count']).reset_index()
             category_sales.columns = ['Category', 'Total_Sales', 'Avg_Sales', 'Records']
             
-            # Display as table and charts
             col1, col2 = st.columns(2)
             
             with col1:
-                st.write("**📊 Category Performance Table:**")
-                category_sales['Avg_Sales'] = category_sales['Avg_Sales'].round(1)
-                st.dataframe(category_sales, use_container_width=True)
+                # Interactive Bar Chart
+                fig_bar = px.bar(
+                    category_sales, 
+                    x="Category", 
+                    y="Total_Sales",
+                    color="Total_Sales",
+                    title="Total Units Sold per Category",
+                    labels={"Total_Sales": "Total Units Sold"},
+                    color_continuous_scale="Blues",
+                    text="Total_Sales"
+                )
+                fig_bar.update_traces(texttemplate='%{text:,.0f}', textposition='outside')
+                fig_bar.update_layout(showlegend=False, height=400)
+                st.plotly_chart(fig_bar, use_container_width=True)
             
             with col2:
-                st.write("**🥧 Sales Distribution (%):**")
-                # Create pie chart data with percentages
-                total_sales = category_sales['Total_Sales'].sum()
-                pie_data = []
-                colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
-                
-                for idx, row in category_sales.iterrows():
-                    percentage = (row['Total_Sales'] / total_sales) * 100
-                    pie_data.append({
-                        'Category': row['Category'],
-                        'Sales': row['Total_Sales'],
-                        'Percentage': percentage
-                    })
-                
-                # Display pie chart as text with emojis and percentages
-                pie_df = pd.DataFrame(pie_data).sort_values('Sales', ascending=False)
-                for idx, row in pie_df.iterrows():
-                    # Create a visual bar using Unicode blocks
-                    bar_length = int(row['Percentage'] / 5)  # Scale down for display
-                    bar = "█" * bar_length + "░" * (20 - bar_length)
-                    st.write(f"**{row['Category']}:** {row['Sales']:,.0f} units ({row['Percentage']:.1f}%)")
-                    st.write(f"`{bar}`")
-                
-                # Simple pie chart using matplotlib-style display
-                chart_data = category_sales.set_index('Category')['Total_Sales']
-                
-                # Create a simple visual representation
-                st.write("**📈 Visual Chart:**")
-                
-                # Since we can't use plotly, let's create a bar chart that looks like segments
-                colors_list = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2']
-                
-                # Streamlit's built-in chart with custom styling
-                st.bar_chart(chart_data, color=colors_list[0] if len(colors_list) > 0 else None)
+                # Interactive Pie Chart
+                fig_pie = px.pie(
+                    category_sales, 
+                    values="Total_Sales", 
+                    names="Category",
+                    title="Sales Distribution (%)",
+                    color_discrete_sequence=px.colors.qualitative.Set3
+                )
+                fig_pie.update_traces(textposition='inside', textinfo='percent+label')
+                fig_pie.update_layout(height=400)
+                st.plotly_chart(fig_pie, use_container_width=True)
+            
+            # Category performance table
+            st.write("**📋 Category Performance Summary:**")
+            category_sales['Avg_Sales'] = category_sales['Avg_Sales'].round(1)
+            st.dataframe(category_sales, use_container_width=True)
 
-            # Time-based analysis (simple)
+            # Time-based analysis
             if 'Date' in df.columns and not df['Date'].isna().all():
                 st.markdown("---")
-                st.subheader("📈 Sales Over Time")
+                st.subheader("📈 Sales Trends Over Time")
                 
-                # Group by month
-                df['YearMonth'] = df['Date'].dt.to_period('M')
-                monthly_sales = df.groupby('YearMonth')['UnitsSold'].sum().reset_index()
-                monthly_sales['YearMonth'] = monthly_sales['YearMonth'].astype(str)
+                # Daily sales trend
+                daily_sales = df.groupby('Date')['UnitsSold'].sum().reset_index()
+                fig_trend = px.line(
+                    daily_sales, 
+                    x='Date', 
+                    y='UnitsSold',
+                    title='Daily Sales Trend',
+                    labels={'UnitsSold': 'Units Sold'}
+                )
+                fig_trend.update_traces(line_color='#1f77b4', line_width=2)
+                fig_trend.update_layout(height=400)
+                st.plotly_chart(fig_trend, use_container_width=True)
                 
-                st.write("**Monthly Sales Summary:**")
-                for idx, row in monthly_sales.iterrows():
-                    st.write(f"**{row['YearMonth']}:** {row['UnitsSold']:,} units")
-                
-                # Simple line chart using st.line_chart
-                if len(monthly_sales) > 1:
-                    chart_data = monthly_sales.set_index('YearMonth')
-                    # Add some styling to the line chart
-                    st.line_chart(chart_data['UnitsSold'], color='#1f77b4')  # Nice blue color
-
-                # REPLACEMENT FOR HEATMAP - Sales Pattern Analysis
+                # Sales Pattern Analysis
                 st.markdown("---")
                 st.subheader("📊 Sales Pattern Analysis")
                 
                 col1, col2 = st.columns(2)
                 
                 with col1:
-                    st.write("**📅 Sales by Day of Week:**")
+                    # Day of week analysis
                     df['DayName'] = df['Date'].dt.day_name()
-                    daily_pattern = df.groupby('DayName')['UnitsSold'].agg(['sum', 'mean']).reset_index()
-                    daily_pattern.columns = ['Day', 'Total_Sales', 'Avg_Sales']
+                    daily_pattern = df.groupby('DayName')['UnitsSold'].sum().reset_index()
                     
                     # Order days
                     day_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-                    daily_pattern['Day'] = pd.Categorical(daily_pattern['Day'], categories=day_order, ordered=True)
-                    daily_pattern = daily_pattern.sort_values('Day')
+                    daily_pattern['DayName'] = pd.Categorical(daily_pattern['DayName'], categories=day_order, ordered=True)
+                    daily_pattern = daily_pattern.sort_values('DayName')
                     
-                    for idx, row in daily_pattern.iterrows():
-                        percentage = (row['Total_Sales'] / daily_pattern['Total_Sales'].sum()) * 100
-                        st.write(f"**{row['Day']}:** {row['Total_Sales']:,} units ({percentage:.1f}%)")
-                    
-                    # Chart with nice blue gradient colors
-                    chart_data = daily_pattern.set_index('Day')['Total_Sales']
-                    st.bar_chart(chart_data, color='#4682b4')  # Steel blue color
+                    fig_daily = px.bar(
+                        daily_pattern,
+                        x='DayName',
+                        y='UnitsSold',
+                        title="Sales by Day of Week",
+                        color='UnitsSold',
+                        color_continuous_scale='Blues'
+                    )
+                    fig_daily.update_layout(showlegend=False, height=400)
+                    st.plotly_chart(fig_daily, use_container_width=True)
                 
                 with col2:
-                    st.write("**⚡ Product Velocity Analysis:**")
+                    # Product velocity
                     product_velocity = df.groupby('Product')['UnitsSold'].agg(['sum', 'mean']).reset_index()
                     product_velocity.columns = ['Product', 'Total_Sales', 'Avg_Daily_Sales']
+                    top_products = product_velocity.nlargest(10, 'Total_Sales')
                     
-                    # Top 5 fast movers
-                    fast_movers = product_velocity.nlargest(5, 'Avg_Daily_Sales')
-                    st.write("🚀 **Top Fast Moving:**")
-                    for idx, row in fast_movers.iterrows():
-                        product_name = row['Product'][:25] + ('...' if len(row['Product']) > 25 else '')
-                        st.write(f"• **{product_name}** - {row['Avg_Daily_Sales']:.1f}/day")
-                    
-                    # Bottom 5 slow movers
-                    slow_movers = product_velocity.nsmallest(5, 'Avg_Daily_Sales')
-                    st.write("🐌 **Slow Moving Products:**")
-                    for idx, row in slow_movers.iterrows():
-                        product_name = row['Product'][:25] + ('...' if len(row['Product']) > 25 else '')
-                        st.write(f"• **{product_name}** - {row['Avg_Daily_Sales']:.1f}/day")
-                
-                # Stock alerts (if Stock column exists)
-                if 'Stock' in df.columns:
-                    st.markdown("---")
-                    st.subheader("⚠️ Stock Alerts")
-                    
-                    # Calculate days of inventory
-                    current_stock = df.groupby('Product')[['Stock', 'UnitsSold']].last().reset_index()
-                    current_stock['Daily_Sales'] = df.groupby('Product')['UnitsSold'].mean().values
-                    current_stock['Days_of_Inventory'] = current_stock['Stock'] / (current_stock['Daily_Sales'] + 0.1)
-                    
-                    col1, col2 = st.columns(2)
-                    
-                    with col1:
-                        # Low stock warnings
-                        low_stock = current_stock[current_stock['Days_of_Inventory'] < 10].sort_values('Days_of_Inventory')
-                        
-                        if len(low_stock) > 0:
-                            st.write("🔴 **Low Stock Alert (< 10 days):**")
-                            for idx, row in low_stock.head(5).iterrows():
-                                product_name = row['Product'][:30] + ('...' if len(row['Product']) > 30 else '')
-                                st.write(f"• **{product_name}** - {row['Days_of_Inventory']:.1f} days left")
-                        else:
-                            st.write("✅ **All products have sufficient stock**")
-                    
-                    with col2:
-                        # Overstock warnings
-                        overstock = current_stock[current_stock['Days_of_Inventory'] > 90].sort_values('Days_of_Inventory', ascending=False)
-                        
-                        if len(overstock) > 0:
-                            st.write("🟡 **Potential Overstock (> 90 days):**")
-                            for idx, row in overstock.head(5).iterrows():
-                                product_name = row['Product'][:30] + ('...' if len(row['Product']) > 30 else '')
-                                st.write(f"• **{product_name}** - {row['Days_of_Inventory']:.0f} days")
-                        else:
-                            st.write("✅ **No overstock detected**")
-
-            # Top performing products
-            if 'Product' in df.columns:
-                st.markdown("---")
-                st.subheader("🏆 Top Products")
-                
-                product_performance = df.groupby('Product')['UnitsSold'].agg(['sum', 'mean', 'count']).reset_index()
-                product_performance.columns = ['Product', 'Total_Sales', 'Avg_Sales', 'Records']
-                product_performance = product_performance.sort_values('Total_Sales', ascending=False).head(10)
-                product_performance['Avg_Sales'] = product_performance['Avg_Sales'].round(1)
-                
-                st.write("**Top 10 Products by Total Sales:**")
-                st.dataframe(product_performance, use_container_width=True)
+                    fig_products = px.bar(
+                        top_products,
+                        x='Total_Sales',
+                        y='Product',
+                        orientation='h',
+                        title='Top 10 Products by Sales',
+                        color='Total_Sales',
+                        color_continuous_scale='Viridis'
+                    )
+                    fig_products.update_layout(yaxis={'categoryorder':'total ascending'}, height=400)
+                    st.plotly_chart(fig_products, use_container_width=True)
 
     else:
         st.warning("📁 Please upload a file in the HOME page first.")
@@ -573,47 +502,49 @@ elif page == "📈 Seasonality":
             products = df['Product'].unique()
             selected_product = st.selectbox("🏷️ Select Product for Analysis:", products)
             
-            # Filter data for selected product
             product_data = df[df['Product'] == selected_product].copy()
             
             if len(product_data) == 0:
                 st.warning("⚠️ No data found for selected product.")
             else:
-                st.subheader(f"📅 Seasonality for {selected_product}")
+                st.subheader(f"📅 Seasonality Analysis for {selected_product}")
                 
-                # Monthly analysis
+                # Monthly analysis with plotly
                 product_data['Month'] = product_data['Date'].dt.month
                 product_data['MonthName'] = product_data['Date'].dt.month_name()
-                monthly_sales = product_data.groupby(['Month', 'MonthName'])['UnitsSold'].agg(['sum', 'mean', 'count']).reset_index()
-                monthly_sales.columns = ['Month', 'MonthName', 'Total_Sales', 'Avg_Sales', 'Records']
+                monthly_sales = product_data.groupby(['Month', 'MonthName'])['UnitsSold'].sum().reset_index()
+                monthly_sales.columns = ['Month', 'MonthName', 'Total_Sales']
                 
-                col1, col2 = st.columns(2)
+                # Interactive line chart
+                fig_monthly = px.line(
+                    monthly_sales, 
+                    x='MonthName', 
+                    y='Total_Sales',
+                    markers=True,
+                    title=f"Monthly Sales Pattern for {selected_product}",
+                    labels={'Total_Sales': 'Total Units Sold', 'MonthName': 'Month'}
+                )
+                fig_monthly.update_traces(line_color='#1e88e5', marker_size=8, line_width=3)
+                fig_monthly.update_layout(height=400)
+                st.plotly_chart(fig_monthly, use_container_width=True)
                 
+                # Statistics
+                col1, col2, col3, col4 = st.columns(4)
                 with col1:
-                    st.write("**Monthly Sales:**")
-                    for idx, row in monthly_sales.iterrows():
-                        st.write(f"**{row['MonthName']}:** {row['Total_Sales']:,} units")
-                
-                with col2:
-                    # Statistics
-                    st.write("**Statistics:**")
                     st.metric("Total Sales", f"{product_data['UnitsSold'].sum():,.0f}")
-                    
-                    if len(monthly_sales) > 0:
-                        peak_month = monthly_sales.loc[monthly_sales['Total_Sales'].idxmax(), 'MonthName']
-                        st.metric("Peak Month", peak_month)
-                        
-                        avg_monthly = monthly_sales['Total_Sales'].mean()
-                        st.metric("Avg Monthly", f"{avg_monthly:.1f}")
-                
-                # Simple bar chart
-                if len(monthly_sales) > 1:
-                    chart_data = monthly_sales.set_index('MonthName')['Total_Sales']
-                    st.bar_chart(chart_data)
+                with col2:
+                    peak_month = monthly_sales.loc[monthly_sales['Total_Sales'].idxmax(), 'MonthName']
+                    st.metric("Peak Month", peak_month)
+                with col3:
+                    avg_monthly = monthly_sales['Total_Sales'].mean()
+                    st.metric("Avg Monthly", f"{avg_monthly:.1f}")
+                with col4:
+                    peak_ratio = monthly_sales['Total_Sales'].max() / monthly_sales['Total_Sales'].mean()
+                    st.metric("Seasonality Index", f"{peak_ratio:.1f}x")
                 
                 # Weekly pattern
                 st.markdown("---")
-                st.subheader("📊 Weekly Pattern")
+                st.subheader("📊 Weekly Sales Pattern")
                 
                 product_data['DayOfWeek'] = product_data['Date'].dt.day_name()
                 weekly_sales = product_data.groupby('DayOfWeek')['UnitsSold'].sum().reset_index()
@@ -623,140 +554,372 @@ elif page == "📈 Seasonality":
                 weekly_sales['DayOfWeek'] = pd.Categorical(weekly_sales['DayOfWeek'], categories=day_order, ordered=True)
                 weekly_sales = weekly_sales.sort_values('DayOfWeek')
                 
-                st.write("**Sales by Day of Week:**")
-                for idx, row in weekly_sales.iterrows():
-                    st.write(f"**{row['DayOfWeek']}:** {row['UnitsSold']:,} units")
-                
-                # Chart
-                chart_data = weekly_sales.set_index('DayOfWeek')['UnitsSold']
-                st.bar_chart(chart_data)
+                fig_weekly = px.bar(
+                    weekly_sales,
+                    x='DayOfWeek',
+                    y='UnitsSold',
+                    title=f"Weekly Sales Pattern for {selected_product}",
+                    color='UnitsSold',
+                    color_continuous_scale='Blues'
+                )
+                fig_weekly.update_layout(showlegend=False, height=400)
+                st.plotly_chart(fig_weekly, use_container_width=True)
 
     else:
         st.warning("📁 Please upload a file in the HOME page first.")
 
-# ========== BASIC FORECAST PAGE ==========
-elif page == "🔮 Basic Forecast":
-    st.markdown("<h1>🔮 Basic Sales Forecasting</h1><hr>", unsafe_allow_html=True)
+# ========== FORECASTING PAGE ==========
+elif page == "🔮 Forecasting":
+    st.markdown("<h1>🔮 Advanced Sales Forecasting</h1><hr>", unsafe_allow_html=True)
     
     if st.session_state.df_clean is not None:
         df = st.session_state.df_clean.copy()
         
-        st.info("📊 This is a simplified forecasting tool using statistical methods. For advanced ML forecasting, install the required libraries.")
+        st.subheader("🤖 Machine Learning Sales Prediction")
         
-        # Check if we have enough data
-        if len(df) < 5:
-            st.error("❌ Insufficient data for forecasting. Need at least 5 records.")
+        if len(df) < 10:
+            st.error("❌ Insufficient data for forecasting. Need at least 10 records.")
         else:
-            st.subheader("📊 Generate Simple Forecast")
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                selected_product = st.selectbox("🏷️ Select Product:", df['Product'].unique())
-            with col2:
-                forecast_days = st.slider("📅 Forecast Period (days):", 7, 60, 30)
-            
-            if st.button("🔮 Generate Basic Forecast", type="primary"):
+            with st.spinner("🧠 Building advanced forecast model..."):
                 try:
-                    # Generate simple forecast
-                    forecast_df = simple_forecast(df, selected_product, forecast_days)
+                    # Prepare data for forecasting
+                    df_forecast = prepare_forecast_data(df)
                     
-                    if forecast_df is not None:
-                        st.success("✅ Forecast generated successfully!")
-                        
-                        # Display forecast summary
-                        total_forecast = forecast_df['Predicted_Sales'].sum()
-                        avg_daily_forecast = forecast_df['Predicted_Sales'].mean()
-                        max_daily_forecast = forecast_df['Predicted_Sales'].max()
-                        min_daily_forecast = forecast_df['Predicted_Sales'].min()
-                        
-                        col1, col2, col3, col4 = st.columns(4)
-                        with col1:
-                            st.metric("Total Forecast", f"{total_forecast:.0f}")
-                        with col2:
-                            st.metric("Daily Average", f"{avg_daily_forecast:.1f}")
-                        with col3:
-                            st.metric("Peak Day", f"{max_daily_forecast:.0f}")
-                        with col4:
-                            st.metric("Low Day", f"{min_daily_forecast:.0f}")
-                        
-                        # Simple line chart
-                        st.subheader("📈 Forecast Visualization")
-                        chart_data = forecast_df.set_index('Date')['Predicted_Sales']
-                        st.line_chart(chart_data)
-                        
-                        # Business recommendations
-                        st.markdown("---")
-                        st.subheader("💡 Simple Recommendations")
-                        
-                        product_data = df[df['Product'] == selected_product].iloc[-1]
-                        current_stock = product_data['Stock']
-                        recommended_stock = total_forecast * 1.2  # 20% buffer
-                        
-                        if current_stock < recommended_stock:
-                            st.markdown(f"""
-                            <div class="warning-box">
-                                <h4>⚠️ Stock Alert</h4>
-                                <p><strong>Current Stock:</strong> {current_stock:.0f} units</p>
-                                <p><strong>Forecasted Demand:</strong> {total_forecast:.0f} units</p>
-                                <p><strong>Recommended Stock:</strong> {recommended_stock:.0f} units</p>
-                                <p><strong>Additional Stock Needed:</strong> {recommended_stock - current_stock:.0f} units</p>
-                            </div>
-                            """, unsafe_allow_html=True)
-                        else:
-                            st.markdown(f"""
-                            <div class="highlight-box">
-                                <h4>✅ Stock Status: Good</h4>
-                                <p><strong>Current Stock:</strong> {current_stock:.0f} units</p>
-                                <p><strong>Forecasted Demand:</strong> {total_forecast:.0f} units</p>
-                                <p><strong>Buffer Available:</strong> {current_stock - total_forecast:.0f} units</p>
-                            </div>
-                            """, unsafe_allow_html=True)
-                        
-                        # Detailed forecast table
-                        with st.expander("📋 Detailed Forecast Table", expanded=False):
-                            display_df = forecast_df.copy()
-                            display_df['Date'] = display_df['Date'].dt.strftime('%Y-%m-%d')
-                            display_df['Predicted_Sales'] = display_df['Predicted_Sales'].round(1)
-                            display_df.columns = ['Date', 'Predicted Sales']
+                    # Build model
+                    model, features, mae, rmse = build_forecast_model(df_forecast)
+                    
+                    # Display model performance
+                    st.success("✅ Advanced ML model built successfully!")
+                    
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric("Model MAE", f"{mae:.2f}", help="Mean Absolute Error")
+                    with col2:
+                        st.metric("Model RMSE", f"{rmse:.2f}", help="Root Mean Square Error")
+                    with col3:
+                        avg_sales = df['UnitsSold'].mean()
+                        accuracy_pct = max(0, (1 - mae/avg_sales) * 100)
+                        st.metric("Accuracy", f"{accuracy_pct:.1f}%", help="Model accuracy percentage")
+                    
+                    # Product selection for forecasting
+                    st.markdown("---")
+                    st.subheader("📊 Generate Product Forecast")
+                    
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        selected_product = st.selectbox("🏷️ Select Product:", df['Product'].unique())
+                    with col2:
+                        forecast_days = st.slider("📅 Forecast Period (days):", 7, 90, 30)
+                    
+                    if st.button("🔮 Generate Advanced Forecast", type="primary"):
+                        try:
+                            # Get product data
+                            product_data = df[df['Product'] == selected_product].iloc[-1]
                             
-                            st.dataframe(display_df, use_container_width=True)
-                            
-                            # Download option
-                            csv = display_df.to_csv(index=False)
-                            st.download_button(
-                                label="📥 Download Forecast CSV",
-                                data=csv,
-                                file_name=f'simple_forecast_{selected_product}_{datetime.now().strftime("%Y%m%d")}.csv',
-                                mime='text/csv'
+                            # Create future dates
+                            last_date = df['Date'].max()
+                            future_dates = pd.date_range(
+                                start=last_date + pd.Timedelta(days=1), 
+                                periods=forecast_days, 
+                                freq='D'
                             )
+                            
+                            # Prepare future data
+                            future_data = []
+                            for date in future_dates:
+                                row = {
+                                    'Date': date,
+                                    'Product': selected_product,
+                                    'Month': date.month,
+                                    'DayOfWeek': date.dayofweek,
+                                    'WeekOfYear': date.isocalendar().week,
+                                    'Quarter': date.quarter,
+                                    'IsWeekend': 1 if date.dayofweek >= 5 else 0,
+                                    'Product_encoded': pd.Categorical([selected_product], 
+                                                                    categories=df['Product'].unique()).codes[0],
+                                    'Category_encoded': pd.Categorical([product_data['Category']], 
+                                                                     categories=df['Category'].unique()).codes[0],
+                                    'Stock': product_data['Stock'],
+                                    'PricePerUnit': product_data.get('מחיר ליחידה (₪)', 0),
+                                    'WeightPerUnit': product_data.get('משקל יחידה (גרם)', 0),
+                                    'Sales_MA_7': df[df['Product'] == selected_product]['UnitsSold'].tail(7).mean(),
+                                    'Sales_MA_30': df[df['Product'] == selected_product]['UnitsSold'].tail(30).mean()
+                                }
+                                future_data.append(row)
+                            
+                            future_df = pd.DataFrame(future_data)
+                            
+                            # Generate predictions
+                            X_future = future_df[features].fillna(0)
+                            predictions = model.predict(X_future)
+                            predictions = np.maximum(predictions, 0)  # No negative predictions
+                            
+                            future_df['Predicted_Sales'] = predictions
+                            
+                            # Create advanced forecast visualization with plotly
+                            st.markdown("---")
+                            st.subheader(f"📈 Advanced Forecast Results for {selected_product}")
+                            
+                            # Historical vs Forecast chart
+                            historical_data = df[df['Product'] == selected_product].tail(60)  # Last 60 days
+                            
+                            fig = go.Figure()
+                            
+                            # Historical data
+                            fig.add_trace(go.Scatter(
+                                x=historical_data['Date'],
+                                y=historical_data['UnitsSold'],
+                                mode='lines+markers',
+                                name='Historical Sales',
+                                line=dict(color='#2E86AB', width=3),
+                                marker=dict(size=6),
+                                hovertemplate='<b>Historical</b><br>Date: %{x}<br>Sales: %{y}<extra></extra>'
+                            ))
+                            
+                            # Forecast data
+                            fig.add_trace(go.Scatter(
+                                x=future_df['Date'],
+                                y=future_df['Predicted_Sales'],
+                                mode='lines+markers',
+                                name='ML Forecast',
+                                line=dict(color='#F24236', width=3, dash='dash'),
+                                marker=dict(size=6),
+                                hovertemplate='<b>Forecast</b><br>Date: %{x}<br>Predicted: %{y:.1f}<extra></extra>'
+                            ))
+                            
+                            # Add confidence interval (simple estimation)
+                            uncertainty = predictions * 0.15  # 15% uncertainty
+                            
+                            # Upper bound
+                            fig.add_trace(go.Scatter(
+                                x=future_df['Date'],
+                                y=predictions + uncertainty,
+                                fill=None,
+                                mode='lines',
+                                line_color='rgba(242, 66, 54, 0)',
+                                showlegend=False,
+                                hoverinfo='skip'
+                            ))
+                            
+                            # Lower bound
+                            fig.add_trace(go.Scatter(
+                                x=future_df['Date'],
+                                y=predictions - uncertainty,
+                                fill='tonexty',
+                                mode='lines',
+                                line_color='rgba(242, 66, 54, 0)',
+                                name='Confidence Interval',
+                                fillcolor='rgba(242, 66, 54, 0.2)',
+                                hoverinfo='skip'
+                            ))
+                            
+                            # Add vertical line to separate historical from forecast
+                            fig.add_vline(
+                                x=last_date,
+                                line_dash="dot",
+                                line_color="gray",
+                                annotation_text="Forecast Start",
+                                annotation_position="top"
+                            )
+                            
+                            fig.update_layout(
+                                title=f'Advanced ML Sales Forecast for {selected_product}',
+                                xaxis_title='Date',
+                                yaxis_title='Units Sold',
+                                height=500,
+                                showlegend=True,
+                                hovermode='x unified',
+                                legend=dict(
+                                    yanchor="top",
+                                    y=0.99,
+                                    xanchor="left",
+                                    x=0.01
+                                )
+                            )
+                            
+                            st.plotly_chart(fig, use_container_width=True)
+                            
+                            # Forecast summary metrics
+                            st.subheader("📊 Forecast Summary")
+                            
+                            total_forecast = future_df['Predicted_Sales'].sum()
+                            avg_daily_forecast = future_df['Predicted_Sales'].mean()
+                            max_daily_forecast = future_df['Predicted_Sales'].max()
+                            min_daily_forecast = future_df['Predicted_Sales'].min()
+                            
+                            col1, col2, col3, col4 = st.columns(4)
+                            with col1:
+                                st.metric("Total Forecast", f"{total_forecast:.0f}")
+                            with col2:
+                                st.metric("Daily Average", f"{avg_daily_forecast:.1f}")
+                            with col3:
+                                st.metric("Peak Day", f"{max_daily_forecast:.0f}")
+                            with col4:
+                                st.metric("Low Day", f"{min_daily_forecast:.0f}")
+                            
+                            # Business recommendations
+                            st.markdown("---")
+                            st.subheader("💡 AI-Powered Business Recommendations")
+                            
+                            current_stock = product_data['Stock']
+                            recommended_stock = total_forecast * 1.2  # 20% safety buffer
+                            
+                            col1, col2 = st.columns(2)
+                            
+                            with col1:
+                                if current_stock < recommended_stock:
+                                    st.markdown("""
+                                    <div class="recommendation-box">
+                                        <h4>⚠️ Stock Alert</h4>
+                                        <p><strong>Current Stock:</strong> {:.0f} units</p>
+                                        <p><strong>Forecasted Demand:</strong> {:.0f} units</p>
+                                        <p><strong>Recommended Stock:</strong> {:.0f} units</p>
+                                        <p><strong>Additional Stock Needed:</strong> {:.0f} units</p>
+                                        <p><em>🎯 Action: Order additional inventory</em></p>
+                                    </div>
+                                    """.format(current_stock, total_forecast, recommended_stock, recommended_stock - current_stock), 
+                                    unsafe_allow_html=True)
+                                else:
+                                    st.markdown("""
+                                    <div class="forecast-highlight">
+                                        <h4>✅ Stock Status: Optimal</h4>
+                                        <p><strong>Current Stock:</strong> {:.0f} units</p>
+                                        <p><strong>Forecasted Demand:</strong> {:.0f} units</p>
+                                        <p><strong>Buffer Available:</strong> {:.0f} units</p>
+                                        <p><em>🎯 Status: No action needed</em></p>
+                                    </div>
+                                    """.format(current_stock, total_forecast, current_stock - total_forecast), 
+                                    unsafe_allow_html=True)
+                            
+                            with col2:
+                                # Peak days identification
+                                peak_days = future_df.nlargest(3, 'Predicted_Sales')[['Date', 'Predicted_Sales']]
+                                peak_dates = [d.strftime('%Y-%m-%d') for d in peak_days['Date']]
+                                
+                                st.markdown(f"""
+                                <div class="forecast-highlight">
+                                    <h4>📈 Peak Sales Days</h4>
+                                    <p><strong>Expected peak sales on:</strong></p>
+                                    <ul>
+                                        {"".join([f"<li>{date} - {sales:.0f} units</li>" for date, sales in zip(peak_dates, peak_days['Predicted_Sales'])])}
+                                    </ul>
+                                    <p><em>🎯 Action: Ensure adequate staffing and inventory</em></p>
+                                </div>
+                                """, unsafe_allow_html=True)
+                            
+                            # Detailed forecast table
+                            with st.expander("📋 Detailed Forecast Table", expanded=False):
+                                display_df = future_df[['Date', 'Predicted_Sales']].copy()
+                                display_df['Date'] = display_df['Date'].dt.strftime('%Y-%m-%d')
+                                display_df['Predicted_Sales'] = display_df['Predicted_Sales'].round(1)
+                                display_df.columns = ['Date', 'Predicted Sales']
+                                
+                                st.dataframe(display_df, use_container_width=True)
+                                
+                                # Download option
+                                csv = display_df.to_csv(index=False)
+                                st.download_button(
+                                    label="📥 Download Forecast CSV",
+                                    data=csv,
+                                    file_name=f'ml_forecast_{selected_product}_{datetime.now().strftime("%Y%m%d")}.csv',
+                                    mime='text/csv'
+                                )
+                            
+                        except Exception as e:
+                            st.error(f"❌ Error generating forecast: {str(e)}")
                     
-                    else:
-                        st.error("❌ Could not generate forecast for selected product.")
-                
+                    # Feature importance analysis
+                    st.markdown("---")
+                    st.subheader("🎯 ML Model Feature Importance Analysis")
+                    
+                    feature_importance = pd.DataFrame({
+                        'Feature': features,
+                        'Importance': model.feature_importances_
+                    }).sort_values('Importance', ascending=False)
+                    
+                    # Rename features for better readability
+                    feature_names = {
+                        'Month': 'Month of Year',
+                        'DayOfWeek': 'Day of Week', 
+                        'WeekOfYear': 'Week of Year',
+                        'Quarter': 'Quarter',
+                        'IsWeekend': 'Weekend Flag',
+                        'Product_encoded': 'Product Type',
+                        'Category_encoded': 'Category',
+                        'Stock': 'Available Stock',
+                        'PricePerUnit': 'Unit Price',
+                        'WeightPerUnit': 'Unit Weight',
+                        'Sales_MA_7': '7-Day Sales Average',
+                        'Sales_MA_30': '30-Day Sales Average'
+                    }
+                    
+                    feature_importance['Feature_Name'] = feature_importance['Feature'].map(feature_names)
+                    
+                    # Interactive feature importance chart
+                    fig_importance = px.bar(
+                        feature_importance.head(10),
+                        x='Importance',
+                        y='Feature_Name',
+                        orientation='h',
+                        title='Top 10 Most Important Factors for Sales Prediction',
+                        labels={'Importance': 'Feature Importance Score', 'Feature_Name': 'Factor'},
+                        color='Importance',
+                        color_continuous_scale='Viridis'
+                    )
+                    fig_importance.update_layout(
+                        yaxis={'categoryorder': 'total ascending'},
+                        height=500
+                    )
+                    st.plotly_chart(fig_importance, use_container_width=True)
+                    
+                    # Feature importance insights
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        st.write("**🔍 Key Insights:**")
+                        top_feature = feature_importance.iloc[0]
+                        st.write(f"• Most important factor: **{top_feature['Feature_Name']}** ({top_feature['Importance']:.3f})")
+                        
+                        temporal_features = feature_importance[feature_importance['Feature'].isin(['Month', 'DayOfWeek', 'Quarter', 'IsWeekend'])]
+                        temporal_importance = temporal_features['Importance'].sum()
+                        st.write(f"• Seasonal factors influence: **{temporal_importance:.1%}** of prediction")
+                        
+                        business_features = feature_importance[feature_importance['Feature'].isin(['Stock', 'PricePerUnit'])]
+                        business_importance = business_features['Importance'].sum()
+                        st.write(f"• Business factors influence: **{business_importance:.1%}** of prediction")
+                    
+                    with col2:
+                        st.write("**💡 Actionable Recommendations:**")
+                        if temporal_importance > 0.3:
+                            st.write("• Focus on seasonal planning and inventory management")
+                        if business_importance > 0.2:
+                            st.write("• Monitor stock levels and pricing strategies closely")
+                        if top_feature['Feature'] in ['Sales_MA_7', 'Sales_MA_30']:
+                            st.write("• Historical sales patterns are strong predictors")
+                        
+                        st.info("""
+                        **🔍 Model Interpretation:**
+                        - Higher importance = stronger influence on sales predictions
+                        - Use these insights to focus on key business drivers
+                        - Historical patterns often show highest importance
+                        """)
+                    
                 except Exception as e:
-                    st.error(f"❌ Error generating forecast: {str(e)}")
-            
-            # Method explanation
-            with st.expander("🔍 How This Forecast Works", expanded=False):
-                st.write("""
-                **This basic forecast uses simple statistical methods:**
-                
-                1. **Average Sales:** Calculates the historical average sales for the product
-                2. **Trend Analysis:** Detects if sales are increasing or decreasing over time
-                3. **Seasonality:** Applies basic weekend/weekday adjustments
-                4. **Safety Buffer:** Recommends 20% extra stock as safety margin
-                
-                **Limitations:**
-                - No complex seasonal patterns
-                - No external factors (holidays, promotions, etc.)
-                - Linear trend assumptions
-                
-                **For advanced forecasting with Machine Learning, install the full requirements:**
-                - plotly, scikit-learn, seaborn, matplotlib
-                """)
+                    st.error(f"❌ Error building forecast model: {str(e)}")
+                    st.write("**Possible issues:**")
+                    st.write("- Insufficient data (need at least 10 records)")
+                    st.write("- Missing required columns")
+                    st.write("- Data quality issues")
     
     else:
         st.warning("📁 Please upload and clean your data in the HOME page first.")
+        st.info("""
+        **To use the advanced forecasting feature:**
+        1. Go to the HOME page
+        2. Upload your Excel file with sales data
+        3. Ensure your data contains: Product, Date, UnitsSold, Stock
+        4. Return to this page to generate ML-powered forecasts
+        """)
 
 # ========== Sidebar Additional Features ==========
 st.sidebar.markdown("---")
@@ -804,9 +967,9 @@ if st.session_state.df_clean is not None:
 
 # Footer
 st.sidebar.markdown("---")
-st.sidebar.markdown("**📦 Ahva Dashboard v1.5**")
-st.sidebar.markdown("*Basic Analytics Platform*")
-st.sidebar.markdown("Built with ❤️ using Streamlit")
+st.sidebar.markdown("**📦 Ahva Dashboard v2.0**")
+st.sidebar.markdown("*Advanced ML Analytics Platform*")
+st.sidebar.markdown("Built with ❤️ using Streamlit & Python")
 
 # Debug mode
 if st.sidebar.checkbox("🔧 Debug Mode"):

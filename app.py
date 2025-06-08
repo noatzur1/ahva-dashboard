@@ -373,21 +373,128 @@ elif page == "📊 Analysis":
             # Time-based analysis (simple)
             if 'Date' in df.columns and not df['Date'].isna().all():
                 st.markdown("---")
-                st.subheader("📈 Sales Over Time")
+                st.subheader("📈 Sales Trends & Patterns")
                 
                 # Group by month
                 df['YearMonth'] = df['Date'].dt.to_period('M')
                 monthly_sales = df.groupby('YearMonth')['UnitsSold'].sum().reset_index()
                 monthly_sales['YearMonth'] = monthly_sales['YearMonth'].astype(str)
                 
-                st.write("**Monthly Sales Summary:**")
-                for idx, row in monthly_sales.iterrows():
-                    st.write(f"**{row['YearMonth']}:** {row['UnitsSold']:,} units")
+                col1, col2 = st.columns(2)
                 
-                # Simple line chart using st.line_chart
-                if len(monthly_sales) > 1:
-                    chart_data = monthly_sales.set_index('YearMonth')
-                    st.line_chart(chart_data['UnitsSold'])
+                with col1:
+                    st.write("**📅 Monthly Sales Summary:**")
+                    for idx, row in monthly_sales.iterrows():
+                        st.write(f"**{row['YearMonth']}:** {row['UnitsSold']:,} units")
+                    
+                    # Simple line chart using st.line_chart
+                    if len(monthly_sales) > 1:
+                        st.write("**Monthly Trend:**")
+                        chart_data = monthly_sales.set_index('YearMonth')
+                        st.line_chart(chart_data['UnitsSold'])
+                
+                with col2:
+                    st.write("**🕐 Sales by Hour of Day:**")
+                    # If we have time component in dates
+                    if df['Date'].dt.hour.nunique() > 1:
+                        hourly_sales = df.groupby(df['Date'].dt.hour)['UnitsSold'].sum().reset_index()
+                        hourly_sales.columns = ['Hour', 'Total_Sales']
+                        
+                        for idx, row in hourly_sales.iterrows():
+                            st.write(f"**{row['Hour']:02d}:00:** {row['Total_Sales']:,} units")
+                        
+                        # Chart
+                        chart_data = hourly_sales.set_index('Hour')
+                        st.bar_chart(chart_data['Total_Sales'])
+                    else:
+                        # Alternative: Day of week analysis
+                        st.write("**📊 Sales by Day of Week:**")
+                        df['DayName'] = df['Date'].dt.day_name()
+                        daily_pattern = df.groupby('DayName')['UnitsSold'].agg(['sum', 'mean']).reset_index()
+                        daily_pattern.columns = ['Day', 'Total_Sales', 'Avg_Sales']
+                        
+                        # Order days
+                        day_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+                        daily_pattern['Day'] = pd.Categorical(daily_pattern['Day'], categories=day_order, ordered=True)
+                        daily_pattern = daily_pattern.sort_values('Day')
+                        
+                        for idx, row in daily_pattern.iterrows():
+                            st.write(f"**{row['Day']}:** {row['Total_Sales']:,} units")
+                        
+                        # Chart
+                        chart_data = daily_pattern.set_index('Day')['Total_Sales']
+                        st.bar_chart(chart_data)
+                
+                # Sales velocity analysis
+                st.markdown("---")
+                st.subheader("⚡ Sales Velocity Analysis")
+                
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    # Fast moving products
+                    product_velocity = df.groupby('Product')['UnitsSold'].agg(['sum', 'mean']).reset_index()
+                    product_velocity.columns = ['Product', 'Total_Sales', 'Avg_Daily_Sales']
+                    fast_movers = product_velocity.nlargest(5, 'Avg_Daily_Sales')
+                    
+                    st.write("**🚀 Fast Moving Products:**")
+                    for idx, row in fast_movers.iterrows():
+                        st.write(f"**{row['Product'][:20]}{'...' if len(row['Product']) > 20 else ''}**")
+                        st.write(f"  Daily avg: {row['Avg_Daily_Sales']:.1f} units")
+                
+                with col2:
+                    # Medium movers
+                    medium_movers = product_velocity.sort_values('Avg_Daily_Sales').iloc[len(product_velocity)//3:2*len(product_velocity)//3].head(5)
+                    
+                    st.write("**📊 Medium Moving Products:**")
+                    for idx, row in medium_movers.iterrows():
+                        st.write(f"**{row['Product'][:20]}{'...' if len(row['Product']) > 20 else ''}**")
+                        st.write(f"  Daily avg: {row['Avg_Daily_Sales']:.1f} units")
+                
+                with col3:
+                    # Slow movers
+                    slow_movers = product_velocity.nsmallest(5, 'Avg_Daily_Sales')
+                    
+                    st.write("**🐌 Slow Moving Products:**")
+                    for idx, row in slow_movers.iterrows():
+                        st.write(f"**{row['Product'][:20]}{'...' if len(row['Product']) > 20 else ''}**")
+                        st.write(f"  Daily avg: {row['Avg_Daily_Sales']:.1f} units")
+                
+                # Stock turnover insights
+                if 'Stock' in df.columns:
+                    st.markdown("---")
+                    st.subheader("🔄 Stock Turnover Insights")
+                    
+                    # Calculate days of inventory
+                    current_stock = df.groupby('Product')[['Stock', 'UnitsSold']].last().reset_index()
+                    current_stock['Daily_Sales'] = df.groupby('Product')['UnitsSold'].mean().values
+                    current_stock['Days_of_Inventory'] = current_stock['Stock'] / (current_stock['Daily_Sales'] + 0.1)  # +0.1 to avoid division by zero
+                    
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        # Low stock warnings
+                        low_stock = current_stock[current_stock['Days_of_Inventory'] < 7].sort_values('Days_of_Inventory')
+                        
+                        st.write("**⚠️ Low Stock Alerts (< 7 days):**")
+                        if len(low_stock) > 0:
+                            for idx, row in low_stock.head(5).iterrows():
+                                st.write(f"**{row['Product'][:25]}{'...' if len(row['Product']) > 25 else ''}**")
+                                st.write(f"  Only {row['Days_of_Inventory']:.1f} days left!")
+                        else:
+                            st.write("✅ All products have sufficient stock")
+                    
+                    with col2:
+                        # Overstock warnings
+                        overstock = current_stock[current_stock['Days_of_Inventory'] > 60].sort_values('Days_of_Inventory', ascending=False)
+                        
+                        st.write("**📦 Potential Overstock (> 60 days):**")
+                        if len(overstock) > 0:
+                            for idx, row in overstock.head(5).iterrows():
+                                st.write(f"**{row['Product'][:25]}{'...' if len(row['Product']) > 25 else ''}**")
+                                st.write(f"  {row['Days_of_Inventory']:.0f} days of inventory")
+                        else:
+                            st.write("✅ No overstock detected")
 
             # Top performing products
             if 'Product' in df.columns:

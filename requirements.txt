@@ -33,3 +33,7 @@ flake8>=4.0.0        # Code linting
 
 # Performance
 numba>=0.56.0        # For faster numerical computations
+plotly>=5.14.0
+matplotlib>=3.5.0
+seaborn>=0.11.0
+scikit-learn>=1.1.0

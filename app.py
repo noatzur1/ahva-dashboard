@@ -804,7 +804,47 @@ elif page == "🔮 Forecasting":
                             st.info("🔄 Falling back to Statistical method...")
                             use_ml_model = False
                         
-                        future_df['Predicted_Sales'] = predictions
+                        # DEBUG: Let's see what the model is getting
+                        st.markdown("### 🔍 Debug Information")
+                        
+                        # Show some of the future data the model sees
+                        with st.expander("🔍 Click to see what data the model receives"):
+                            debug_cols = ['Date', 'Month', 'DayOfWeek', 'IsWeekend', 'Stock', 'Sales_MA_7']
+                            available_debug_cols = [col for col in debug_cols if col in future_df.columns]
+                            st.write("**Sample of future data (first 7 days):**")
+                            st.dataframe(future_df[available_debug_cols].head(7))
+                            
+                            st.write("**Predictions for each day:**")
+                            debug_pred = future_df[['Date', 'Predicted_Sales']].head(10).copy()
+                            debug_pred['Date'] = debug_pred['Date'].dt.strftime('%Y-%m-%d (%A)')
+                            st.dataframe(debug_pred)
+                        
+                        # Check if predictions are too similar
+                        pred_std = future_df['Predicted_Sales'].std()
+                        pred_range = future_df['Predicted_Sales'].max() - future_df['Predicted_Sales'].min()
+                        
+                        if pred_std < 1:
+                            st.warning(f"""
+                            ⚠️ **Model Issue Detected:** 
+                            - Predictions are too similar (standard deviation: {pred_std:.2f})
+                            - Range between min/max: {pred_range:.1f}
+                            - This suggests the model isn't using day-of-week or seasonal patterns properly
+                            """)
+                            
+                            # Let's try to see why
+                            st.write("**🔍 Potential causes:**")
+                            st.write("1. All input features might be too similar")
+                            st.write("2. Model might be defaulting to average value")
+                            st.write("3. Feature importance might be dominated by constant values")
+                            
+                            # Show feature values for first few days
+                            if len(future_df) >= 7:
+                                sample_features = future_df[['DayOfWeek', 'Month', 'IsWeekend', 'Stock']].head(7)
+                                st.write("**Feature variation (first 7 days):**")
+                                st.dataframe(sample_features)
+                        
+                        else:
+                            st.success(f"✅ Model predictions look varied (std: {pred_std:.2f}, range: {pred_range:.1f})")
                         
                     else:
                         # Statistical Backup Forecasting

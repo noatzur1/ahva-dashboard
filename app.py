@@ -902,43 +902,37 @@ elif page == "🔮 Forecasting":
                         - Next review recommended: **In 1 week**
                         """)
                     
-                    # Additional insights
+                    # Additional insights - SIMPLIFIED
                     st.markdown("---")
-                    st.markdown("### 📈 Additional Insights")
+                    st.markdown("### 📈 Business Summary")
                     
                     col1, col2 = st.columns(2)
                     
                     with col1:
-                        st.markdown("**📊 Stock Coverage Analysis:**")
-                        coverage_7_days = (current_stock / total_7_days) * 100 if total_7_days > 0 else 100
-                        coverage_14_days = (current_stock / total_14_days) * 100 if total_14_days > 0 else 100
+                        st.markdown("**📋 Quick Status Check:**")
+                        days_stock_will_last = current_stock / avg_per_day if avg_per_day > 0 else 0
                         
-                        st.write(f"• **7-day coverage:** {coverage_7_days:.0f}%")
-                        st.write(f"• **14-day coverage:** {coverage_14_days:.0f}%")
-                        
-                        if coverage_7_days < 100:
-                            st.write("🔴 **Risk:** Will run out within a week")
-                        elif coverage_14_days < 100:
-                            st.write("🟡 **Caution:** Will run out within 2 weeks")
+                        if days_stock_will_last >= 21:
+                            st.success(f"✅ **{days_stock_will_last:.0f} days of stock** - You're well covered")
+                        elif days_stock_will_last >= 14:
+                            st.info(f"📊 **{days_stock_will_last:.0f} days of stock** - Good for now")
+                        elif days_stock_will_last >= 7:
+                            st.warning(f"⚠️ **{days_stock_will_last:.0f} days of stock** - Plan to reorder soon")
                         else:
-                            st.write("🟢 **Safe:** Stock covers forecast period")
+                            st.error(f"🚨 **{days_stock_will_last:.0f} days of stock** - Order immediately!")
                     
                     with col2:
-                        st.markdown("**💰 Financial Impact:**")
+                        st.markdown("**💰 Sales Value:**")
                         if 'מחיר ליחידה (₪)' in product_info:
                             unit_price = float(product_info.get('מחיר ליחידה (₪)', 0))
                             if unit_price > 0:
-                                value_7_days = total_7_days * unit_price
                                 value_14_days = total_14_days * unit_price
-                                current_value = current_stock * unit_price
-                                
-                                st.write(f"• **Current stock value:** ₪{current_value:,.0f}")
-                                st.write(f"• **7-day sales value:** ₪{value_7_days:,.0f}")
-                                st.write(f"• **14-day sales value:** ₪{value_14_days:,.0f}")
+                                st.write(f"💵 **Expected 14-day revenue:** ₪{value_14_days:,.0f}")
+                                st.write(f"💰 **Average daily revenue:** ₪{(value_14_days/14):,.0f}")
                             else:
-                                st.write("• Price information not available")
+                                st.write("💰 **Price info needed** for revenue calculation")
                         else:
-                            st.write("• Price information not available")
+                            st.write("💰 **Add prices** to see revenue forecasts")
                     
                     # FORECAST CHART ONLY - NO HISTORICAL DATA
                     st.markdown("### 📈 14-Day Forecast Chart")

@@ -80,6 +80,7 @@ def clean_data(df):
                 try:
                     if 1 <= date_val <= 100000:
                         base_date = pd.to_datetime('1899-12-30')
+                        # FIXED: Use pd.Timedelta instead of direct addition
                         return base_date + pd.Timedelta(days=int(date_val))
                 except:
                     pass
@@ -274,9 +275,14 @@ def simple_forecast_backup(df, product_name, days=30):
     forecast_data = []
     last_date = pd.to_datetime(product_data['Date'].max())
     
-    for i in range(1, days + 1):
-        future_date = last_date + pd.Timedelta(days=i)
-        
+    # FIXED: Use pd.date_range instead of manual loop
+    future_dates = pd.date_range(
+        start=last_date + pd.Timedelta(days=1),
+        periods=days,
+        freq='D'
+    )
+    
+    for i, future_date in enumerate(future_dates, 1):
         predicted_sales = base_forecast * (1 + growth_rate * i / 30)
         
         day_of_week = future_date.dayofweek
@@ -736,9 +742,11 @@ elif page == "🔮 Forecasting":
                         # Prepare future data for ML model
                         future_data = []
                         for date in future_dates:
-                            # Calculate correct month end
-                            next_month = (date.replace(day=28) + pd.Timedelta(days=4)).replace(day=1)
-                            last_day_of_month = (next_month - pd.Timedelta(days=1)).day
+                            # FIXED: Simplified month end calculation
+                            try:
+                                is_month_end = (date + pd.Timedelta(days=1)).month != date.month
+                            except:
+                                is_month_end = False
                             
                             row = {
                                 'Date': date,
@@ -750,7 +758,7 @@ elif page == "🔮 Forecasting":
                                 'DayOfMonth': date.day,
                                 'IsWeekend': 1 if date.dayofweek >= 5 else 0,
                                 'IsMonthStart': 1 if date.day == 1 else 0,
-                                'IsMonthEnd': 1 if date.day == last_day_of_month else 0,  # FIXED
+                                'IsMonthEnd': 1 if is_month_end else 0,  # FIXED
                                 'Product_encoded': pd.Categorical([selected_product], categories=df['Product'].unique()).codes[0],
                                 'Category_encoded': pd.Categorical([product_info['Category']], categories=df['Category'].unique()).codes[0],
                                 'Stock': product_info['Stock'],

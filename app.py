@@ -191,13 +191,23 @@ def prepare_forecast_data_enhanced(df):
     
     # FIXED: Simplified trend calculation to avoid date arithmetic issues
     df_forecast['Sales_Trend_7'] = df_forecast.groupby('Product')['UnitsSold'].transform(
-        lambda x: x.pct_change(periods=min(7, len(x)-1)).fillna(0)
+        lambda x: x.pct_change(periods=min(7, len(x)-1)).fillna(0).replace([np.inf, -np.inf], 0)
     )
     
-    df_forecast['Stock_Sales_Ratio'] = df_forecast['Stock'] / (df_forecast['UnitsSold'] + 1)
+    # FIXED: Safe division to avoid infinity
+    df_forecast['Stock_Sales_Ratio'] = np.where(
+        df_forecast['UnitsSold'] + 1 > 0,
+        df_forecast['Stock'] / (df_forecast['UnitsSold'] + 1),
+        0
+    )
     
     category_avg = df_forecast.groupby('Category')['UnitsSold'].transform('mean')
-    df_forecast['Product_vs_Category_Performance'] = df_forecast['UnitsSold'] / (category_avg + 1)
+    # FIXED: Safe division to avoid infinity
+    df_forecast['Product_vs_Category_Performance'] = np.where(
+        category_avg + 1 > 0,
+        df_forecast['UnitsSold'] / (category_avg + 1),
+        1.0
+    )
     
     return df_forecast
 
@@ -217,8 +227,25 @@ def build_enhanced_forecast_model(df_forecast):
     
     available_features = [f for f in features if f in df_forecast.columns]
     
+    # FIXED: Clean data before model training
     X = df_forecast[available_features].fillna(0)
+    
+    # Replace infinity values with 0
+    X = X.replace([np.inf, -np.inf], 0)
+    
+    # Cap extremely large values
+    for col in X.columns:
+        if X[col].dtype in ['float64', 'float32', 'int64', 'int32']:
+            # Cap at 99.9th percentile to remove outliers
+            upper_cap = X[col].quantile(0.999)
+            lower_cap = X[col].quantile(0.001)
+            X[col] = X[col].clip(lower=lower_cap, upper=upper_cap)
+    
     y = df_forecast['UnitsSold']
+    
+    # Check for any remaining problematic values
+    if np.any(np.isinf(X.values)) or np.any(np.isnan(X.values)):
+        X = X.fillna(0).replace([np.inf, -np.inf], 0)
     
     test_size = min(0.25, max(0.15, len(df_forecast) // 8))
     
@@ -756,15 +783,26 @@ elif page == "🔮 Forecasting":
                                 'Sales_MA_14': product_data['UnitsSold'].tail(14).mean(),
                                 'Sales_MA_30': product_data['UnitsSold'].tail(30).mean(),
                                 'Sales_Trend_7': 0,  # Simplified
-                                'Stock_Sales_Ratio': product_info['Stock'] / (product_data['UnitsSold'].tail(7).mean() + 1),
+                                'Stock_Sales_Ratio': max(0, min(1000, product_info['Stock'] / (product_data['UnitsSold'].tail(7).mean() + 1))),  # FIXED: Safe calculation
                                 'Product_vs_Category_Performance': 1.0
                             }
                             future_data.append(row)
                         
                         future_df = pd.DataFrame(future_data)
                         
-                        # Generate ML predictions
+                        # Generate ML predictions - FIXED with data cleaning
                         X_future = future_df[features].fillna(0)
+                        
+                        # Clean future data before prediction
+                        X_future = X_future.replace([np.inf, -np.inf], 0)
+                        
+                        # Cap extremely large values
+                        for col in X_future.columns:
+                            if X_future[col].dtype in ['float64', 'float32', 'int64', 'int32']:
+                                upper_cap = X_future[col].quantile(0.999) if len(X_future) > 1 else 1000
+                                lower_cap = X_future[col].quantile(0.001) if len(X_future) > 1 else -1000
+                                X_future[col] = X_future[col].clip(lower=lower_cap, upper=upper_cap)
+                        
                         predictions = model.predict(X_future)
                         predictions = np.maximum(predictions, 0)  # No negative predictions
                         

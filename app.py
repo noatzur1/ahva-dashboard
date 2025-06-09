@@ -153,8 +153,8 @@ def clean_data(df):
     return df_clean
 
 @st.cache_data
-def prepare_simple_forecast_data(df):
-    """הכנת נתונים לחיזוי - גרסה פשוטה ובטוחה"""
+def prepare_forecast_data_enhanced(df):
+    """הכנת נתונים לחיזוי - גרסה משופרת"""
     if len(df) == 0:
         return df
     
@@ -162,81 +162,88 @@ def prepare_simple_forecast_data(df):
     df_forecast = df_forecast.dropna(subset=['Date'])
     df_forecast = df_forecast.sort_values('Date')
     
-    # פיצ'רי זמן בסיסיים בלבד
+    # פיצ'רי זמן מתקדמים
     df_forecast['Year'] = df_forecast['Date'].dt.year
     df_forecast['Month'] = df_forecast['Date'].dt.month
     df_forecast['DayOfWeek'] = df_forecast['Date'].dt.dayofweek
+    df_forecast['WeekOfYear'] = df_forecast['Date'].dt.isocalendar().week
     df_forecast['Quarter'] = df_forecast['Date'].dt.quarter
     df_forecast['DayOfMonth'] = df_forecast['Date'].dt.day
     df_forecast['IsWeekend'] = df_forecast['DayOfWeek'].isin([5, 6]).astype(int)
     df_forecast['IsMonthStart'] = df_forecast['Date'].dt.is_month_start.astype(int)
     df_forecast['IsMonthEnd'] = df_forecast['Date'].dt.is_month_end.astype(int)
     
-    # פיצ'רי מוצר בסיסיים
+    # פיצ'רי מוצר מתקדמים
     df_forecast['Product_encoded'] = pd.Categorical(df_forecast['Product']).codes
     df_forecast['Category_encoded'] = pd.Categorical(df_forecast['Category']).codes
     
-    # וידוא שהעמודות החיוניות קיימות ותקינות
-    if 'UnitsSold' in df_forecast.columns:
-        df_forecast['UnitsSold'] = pd.to_numeric(df_forecast['UnitsSold'], errors='coerce').fillna(0)
+    # פיצ'רי מחיר ומשקל
+    df_forecast['PricePerUnit'] = pd.to_numeric(df_forecast.get('מחיר ליחידה (₪)', 0), errors='coerce').fillna(0)
+    df_forecast['WeightPerUnit'] = pd.to_numeric(df_forecast.get('משקל יחידה (גרם)', 0), errors='coerce').fillna(0)
     
-    if 'Stock' in df_forecast.columns:
-        df_forecast['Stock'] = pd.to_numeric(df_forecast['Stock'], errors='coerce').fillna(0)
+    # פיצ'רי מכירות היסטוריות מתקדמים
+    df_forecast = df_forecast.sort_values(['Product', 'Date'])
+    
+    for window in [3, 7, 14, 30]:
+        df_forecast[f'Sales_MA_{window}'] = df_forecast.groupby('Product')['UnitsSold'].transform(
+            lambda x: x.rolling(window=min(window, len(x)), min_periods=1).mean()
+        )
+    
+    df_forecast['Sales_Trend_7'] = df_forecast.groupby('Product')['UnitsSold'].transform(
+        lambda x: x.rolling(window=min(7, len(x)), min_periods=2).apply(
+            lambda vals: np.polyfit(range(len(vals)), vals, 1)[0] if len(vals) > 1 else 0, raw=False
+        )
+    )
+    
+    df_forecast['Stock_Sales_Ratio'] = df_forecast['Stock'] / (df_forecast['UnitsSold'] + 1)
+    
+    category_avg = df_forecast.groupby('Category')['UnitsSold'].transform('mean')
+    df_forecast['Product_vs_Category_Performance'] = df_forecast['UnitsSold'] / (category_avg + 1)
     
     return df_forecast
 
-def build_simple_reliable_forecast_model(df_forecast):
-    """מודל חיזוי פשוט ואמין - מסתמך רק על נתונים בסיסיים"""
-    if len(df_forecast) < 10:
-        raise ValueError("Need at least 10 records for forecasting")
+def build_enhanced_forecast_model(df_forecast):
+    """בניית מודל חיזוי משופר"""
+    if len(df_forecast) < 15:
+        raise ValueError("Need at least 15 records for reliable forecasting")
     
-    # SIMPLE FEATURES ONLY - רק פיצ'רים בסיסיים ובטוחים
     features = [
-        'Month', 'DayOfWeek', 'Quarter', 'DayOfMonth',
+        'Month', 'DayOfWeek', 'WeekOfYear', 'Quarter', 'DayOfMonth',
         'IsWeekend', 'IsMonthStart', 'IsMonthEnd',
         'Product_encoded', 'Category_encoded', 
-        'Stock', 'UnitsSold'  # הנתונים הבסיסיים שלך
+        'Stock', 'PricePerUnit', 'WeightPerUnit',
+        'Sales_MA_3', 'Sales_MA_7', 'Sales_MA_14', 'Sales_MA_30',
+        'Sales_Trend_7', 'Stock_Sales_Ratio', 'Product_vs_Category_Performance'
     ]
     
     available_features = [f for f in features if f in df_forecast.columns]
     
-    # בדיקה שיש לנו את העמודות הבסיסיות
-    if 'UnitsSold' not in df_forecast.columns:
-        raise ValueError("Missing UnitsSold column")
+    X = df_forecast[available_features].fillna(0)
+    y = df_forecast['UnitsSold']
     
-    X = df_forecast[available_features].copy()
-    y = df_forecast['UnitsSold'].copy()
+    test_size = min(0.25, max(0.15, len(df_forecast) // 8))
     
-    # ניקוי פשוט - רק מה שחיוני
-    X = X.fillna(0)
-    X = X.replace([np.inf, -np.inf], 0)
-    
-    # בדיקה אחרונה
-    if X.isnull().any().any() or np.isinf(X.values).any():
-        st.error("❌ Data still contains problematic values")
-        return None, None, None, None, None
-    
-    # חלוקה לאימון ובדיקה
     if len(df_forecast) > 10:
         X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=0.2, random_state=42, shuffle=False  # שמירה על סדר זמני
+            X, y, test_size=test_size, random_state=42, shuffle=True
         )
     else:
         X_train, X_test, y_train, y_test = X, X, y, y
     
-    # מודל פשוט עם פרמטרים בטוחים
+    n_estimators = min(200, max(50, len(X_train) // 3))
+    max_depth = min(15, max(5, len(X_train) // 10))
+    
     model = RandomForestRegressor(
-        n_estimators=50,  # פחות עצים = יותר מהיר
-        max_depth=10,     # עומק מוגבל
-        min_samples_split=5,
-        min_samples_leaf=2,
+        n_estimators=n_estimators,
+        max_depth=max_depth,
+        min_samples_split=max(2, len(X_train) // 50),
+        min_samples_leaf=max(1, len(X_train) // 100),
         random_state=42,
-        n_jobs=1  # חוט יחיד למניעת בעיות
+        n_jobs=-1
     )
     
     model.fit(X_train, y_train)
     
-    # בדיקת ביצועים
     y_pred = model.predict(X_test)
     mae = mean_absolute_error(y_test, y_pred)
     rmse = np.sqrt(mean_squared_error(y_test, y_pred))
@@ -245,7 +252,7 @@ def build_simple_reliable_forecast_model(df_forecast):
     return model, available_features, mae, rmse, r2
 
 def simple_forecast_backup(df, product_name, days=30):
-    """חיזוי פשוט לגיבוי במקרה של כשל במודל ML"""
+    """חיזוי פשוט לגיבוי במקרה של כשל במודל ML - FIXED DATE ISSUE"""
     product_data = df[df['Product'] == product_name].copy()
     
     if len(product_data) == 0:
@@ -266,11 +273,12 @@ def simple_forecast_backup(df, product_name, days=30):
     base_forecast = product_data['UnitsSold'].tail(14).mean()
     
     forecast_data = []
-    last_date = pd.to_datetime(product_data['Date'].max())
+    last_date = product_data['Date'].max()
     
-    # SIMPLE version - use DateOffset
+    # FIXED: Use string conversion to avoid date arithmetic issues
     for i in range(1, days + 1):
-        future_date = last_date + pd.DateOffset(days=i)
+        # Convert to timestamp, add days, then back to datetime
+        future_date = pd.Timestamp(last_date) + pd.Timedelta(days=i)
         
         predicted_sales = base_forecast * (1 + growth_rate * i / 30)
         
@@ -653,11 +661,11 @@ elif page == "🔮 Forecasting":
             if model_type == "🤖 Advanced ML (Recommended)":
                 with st.spinner("🧠 Building enhanced Random Forest model with 20+ features..."):
                     try:
-                        # Prepare SIMPLE data - פיצ'רים בסיסיים בלבד
-                        df_forecast = prepare_simple_forecast_data(df)
+                        # Prepare enhanced data
+                        df_forecast = prepare_forecast_data_enhanced(df)
                         
-                        # Build SIMPLE model - מודל פשוט ואמין
-                        model, features, mae, rmse, r2 = build_simple_reliable_forecast_model(df_forecast)
+                        # Build enhanced model
+                        model, features, mae, rmse, r2 = build_enhanced_forecast_model(df_forecast)
                         
                         # Display enhanced model performance
                         st.success("✅ Enhanced Random Forest model trained successfully!")
@@ -716,42 +724,85 @@ elif page == "🔮 Forecasting":
                     
                     product_info = product_data.iloc[-1]
                     
+                    # Show debug info
+                    st.info(f"🔍 Debug: Found {len(product_data)} records for {selected_product}")
+                    
                     if use_ml_model and 'model' in locals():
                         # Advanced ML Forecasting
                         st.markdown("### 🤖 Advanced ML Forecast Results")
                         
-                        # Create future dates - פשוט ובטוח
-                        last_date = pd.to_datetime(df['Date'].max())
-                        future_dates = []
-                        for i in range(1, forecast_days + 1):
-                            future_dates.append(last_date + pd.DateOffset(days=i))
-                        
-                        # Prepare SIMPLE future data - רק נתונים בסיסיים
-                        future_data = []
-                        for date in future_dates:
-                            row = {
-                                'Date': date,
-                                'Product': selected_product,
-                                'Month': date.month,
-                                'DayOfWeek': date.dayofweek,
-                                'Quarter': date.quarter,
-                                'DayOfMonth': date.day,
-                                'IsWeekend': 1 if date.dayofweek >= 5 else 0,
-                                'IsMonthStart': 1 if date.day == 1 else 0,
-                                'IsMonthEnd': 1 if date.is_month_end else 0,
-                                'Product_encoded': pd.Categorical([selected_product], categories=df['Product'].unique()).codes[0],
-                                'Category_encoded': pd.Categorical([product_info['Category']], categories=df['Category'].unique()).codes[0],
-                                'Stock': float(product_info['Stock']),  # המלאי שלך
-                                'UnitsSold': float(product_data['UnitsSold'].tail(7).mean())  # ממוצע מכירות אחרון
-                            }
-                            future_data.append(row)
-                        
-                        future_df = pd.DataFrame(future_data)
-                        
-                        # Generate SIMPLE predictions - חיזוי פשוט
-                        X_future = future_df[features].fillna(0)
-                        predictions = model.predict(X_future)
-                        predictions = np.maximum(predictions, 0)  # No negative predictions
+                        try:
+                            # Create future dates - MULTIPLE METHODS TO TRY
+                            last_date = df['Date'].max()
+                            st.info(f"🔍 Last date in data: {last_date}")
+                            
+                            # Method 1: Simple range
+                            try:
+                                future_dates = pd.date_range(
+                                    start=last_date,
+                                    periods=forecast_days + 1,
+                                    freq='D'
+                                )[1:]  # Skip first date (last_date)
+                                st.success("✅ Method 1: pd.date_range worked")
+                            except Exception as e1:
+                                st.warning(f"⚠️ Method 1 failed: {e1}")
+                                
+                                # Method 2: Manual creation
+                                try:
+                                    future_dates = []
+                                    base_date = pd.to_datetime(last_date)
+                                    for i in range(1, forecast_days + 1):
+                                        future_dates.append(base_date + pd.Timedelta(days=i))
+                                    st.success("✅ Method 2: Manual creation worked")
+                                except Exception as e2:
+                                    st.error(f"❌ Method 2 also failed: {e2}")
+                                    st.stop()
+                            
+                            # Prepare future data for ML model
+                            future_data = []
+                            for i, date in enumerate(future_dates):
+                                try:
+                                    row = {
+                                        'Date': date,
+                                        'Product': selected_product,
+                                        'Month': date.month,
+                                        'DayOfWeek': date.dayofweek,
+                                        'WeekOfYear': date.isocalendar().week,
+                                        'Quarter': date.quarter,
+                                        'DayOfMonth': date.day,
+                                        'IsWeekend': 1 if date.dayofweek >= 5 else 0,
+                                        'IsMonthStart': 1 if date.day == 1 else 0,
+                                        'IsMonthEnd': 1 if date.is_month_end else 0,
+                                        'Product_encoded': pd.Categorical([selected_product], categories=df['Product'].unique()).codes[0],
+                                        'Category_encoded': pd.Categorical([product_info['Category']], categories=df['Category'].unique()).codes[0],
+                                        'Stock': product_info['Stock'],
+                                        'PricePerUnit': product_info.get('מחיר ליחידה (₪)', 0),
+                                        'WeightPerUnit': product_info.get('משקל יחידה (גרם)', 0),
+                                        'Sales_MA_3': product_data['UnitsSold'].tail(3).mean(),
+                                        'Sales_MA_7': product_data['UnitsSold'].tail(7).mean(),
+                                        'Sales_MA_14': product_data['UnitsSold'].tail(14).mean(),
+                                        'Sales_MA_30': product_data['UnitsSold'].tail(30).mean(),
+                                        'Sales_Trend_7': 0,
+                                        'Stock_Sales_Ratio': product_info['Stock'] / (product_data['UnitsSold'].tail(7).mean() + 1),
+                                        'Product_vs_Category_Performance': 1.0
+                                    }
+                                    future_data.append(row)
+                                except Exception as e3:
+                                    st.error(f"❌ Error creating row {i}: {e3}")
+                                    st.stop()
+                            
+                            future_df = pd.DataFrame(future_data)
+                            st.success(f"✅ Created {len(future_df)} future data points")
+                            
+                            # Generate ML predictions
+                            X_future = future_df[features].fillna(0)
+                            predictions = model.predict(X_future)
+                            predictions = np.maximum(predictions, 0)  # No negative predictions
+                            
+                        except Exception as date_error:
+                            st.error(f"❌ Date creation error: {date_error}")
+                            st.info("🔄 Falling back to Statistical method...")
+                            use_ml_model = False
                         
                         future_df['Predicted_Sales'] = predictions
                         

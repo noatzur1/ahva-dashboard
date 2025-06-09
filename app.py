@@ -703,16 +703,17 @@ elif page == "🔮 Forecasting":
             st.markdown("---")
             st.subheader("📊 Generate Forecast")
             
-            col1, col2, col3 = st.columns(3)
+            col1, col2 = st.columns(2)
             with col1:
                 selected_product = st.selectbox("🏷️ Select Product:", df['Product'].unique())
             with col2:
-                forecast_days = st.slider("📅 Forecast Period (days):", 7, 120, 30)
-            with col3:
                 show_confidence = st.checkbox("📈 Show Confidence Bands", value=True)
             
             if st.button("🔮 Generate Enhanced Forecast", type="primary"):
                 try:
+                    # Fixed 14-day forecast period
+                    forecast_days = 14
+                    
                     # Product data validation
                     product_data = df[df['Product'] == selected_product]
                     if len(product_data) < 5:
@@ -806,22 +807,8 @@ elif page == "🔮 Forecasting":
                             st.error("❌ Could not generate forecast for selected product.")
                             st.stop()
                     
-                    # Display forecast results
-                    st.markdown("### 🎯 Sales Forecast Results")
-                    
-                    # Show forecast table
-                    forecast_table = future_df[['Date', 'Predicted_Sales']].head(14).copy()
-                    forecast_table['Date'] = forecast_table['Date'].dt.strftime('%m/%d (%a)')
-                    forecast_table['Predicted_Sales'] = forecast_table['Predicted_Sales'].round(0).astype(int)
-                    forecast_table.columns = ['Date', 'Units']
-                    
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        st.markdown("**📅 Week 1**")
-                        st.dataframe(forecast_table.head(7), hide_index=True)
-                    with col2:
-                        st.markdown("**📅 Week 2**")
-                        st.dataframe(forecast_table.tail(7), hide_index=True)
+                    # Display forecast results - SIMPLIFIED
+                    st.markdown("### 🎯 14-Day Sales Forecast Analysis")
                     
                     # Business metrics - PRACTICAL RECOMMENDATIONS BASED ON CURRENT STOCK
                     total_7_days = future_df['Predicted_Sales'].head(7).sum()
@@ -957,39 +944,26 @@ elif page == "🔮 Forecasting":
                         else:
                             st.write("• Price information not available")
                     
-                    # Simple chart
-                    st.markdown("### 📈 Forecast Visualization")
-                    
-                    # Historical data (last 30 days for clarity)
-                    historical_data = product_data.tail(30)
+                    # Simple forecast chart - FORECAST ONLY
+                    st.markdown("### 📈 14-Day Forecast Visualization")
                     
                     fig = go.Figure()
                     
-                    # Historical data - simple blue line
-                    fig.add_trace(go.Scatter(
-                        x=historical_data['Date'],
-                        y=historical_data['UnitsSold'],
-                        mode='lines+markers',
-                        name='Historical Sales',
-                        line=dict(color='blue', width=2),
-                        marker=dict(size=4)
-                    ))
-                    
-                    # Forecast data - simple red line
+                    # Forecast data only - clean visualization
                     fig.add_trace(go.Scatter(
                         x=future_df['Date'],
                         y=future_df['Predicted_Sales'],
                         mode='lines+markers',
-                        name='Forecast',
-                        line=dict(color='red', width=2, dash='dash'),
-                        marker=dict(size=4)
+                        name='14-Day Forecast',
+                        line=dict(color='#1f77b4', width=3),
+                        marker=dict(size=6, color='#1f77b4')
                     ))
                     
                     # Basic layout
                     fig.update_layout(
-                        title=f'Sales Forecast for {selected_product}',
+                        title=f'14-Day Sales Forecast for {selected_product}',
                         xaxis_title='Date',
-                        yaxis_title='Units Sold',
+                        yaxis_title='Predicted Units Sold',
                         height=400,
                         showlegend=True
                     )

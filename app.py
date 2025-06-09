@@ -1,4 +1,30 @@
-import streamlit as st
+# Business metrics - FOCUS ON CURRENT STOCK
+                    total_7_days = future_df['Predicted_Sales'].head(7).sum()
+                    total_14_days = future_df['Predicted_Sales'].head(14).sum()
+                    avg_per_day = future_df['Predicted_Sales'].mean()
+                    
+                    # GET CURRENT STOCK - most recent entry for this product
+                    current_stock = float(product_info['Stock'])
+                    
+                    # Calculate coverage for practical periods
+                    days_coverage_current = current_stock / avg_per_day if avg_per_day > 0 else 0
+                    
+                    st.markdown("---")
+                    st.markdown("### 📊 Current Stock Analysis")
+                    
+                    col1, col2, col3, col4 = st.columns(4)
+                    
+                    with col1:
+                        st.metric(
+                            "📦 Current Stock", 
+                            f"{current_stock:.0f} units",
+                            help="Your actual current inventory level"
+                        )
+                    with col2:
+                        st.metric(
+                            "📅 7-Day Forecast", 
+                            f"{total_7_days:.0f} units",
+                            help="import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.express as px
@@ -826,31 +852,139 @@ elif page == "🔮 Forecasting":
                         st.markdown("**📅 Week 2**")
                         st.dataframe(forecast_table.tail(7), hide_index=True)
                     
-                    # Business metrics
-                    total_30_days = future_df['Predicted_Sales'].sum()
+                    # Business metrics - PRACTICAL RECOMMENDATIONS BASED ON CURRENT STOCK
+                    total_7_days = future_df['Predicted_Sales'].head(7).sum()
+                    total_14_days = future_df['Predicted_Sales'].head(14).sum()
                     avg_per_day = future_df['Predicted_Sales'].mean()
-                    current_stock = product_info['Stock']
-                    days_of_stock = current_stock / avg_per_day if avg_per_day > 0 else 0
+                    
+                    # GET CURRENT STOCK - most recent entry for this product
+                    current_stock = float(product_info['Stock'])
                     
                     st.markdown("---")
-                    col1, col2, col3 = st.columns(3)
+                    st.markdown("### 📊 Stock Planning Analysis")
+                    
+                    col1, col2, col3, col4 = st.columns(4)
                     
                     with col1:
-                        st.metric("📦 30-Day Forecast", f"{total_30_days:.0f} units")
+                        st.metric(
+                            "📦 Current Stock", 
+                            f"{current_stock:.0f} units",
+                            help="Your actual current inventory level"
+                        )
                     with col2:
-                        st.metric("📈 Daily Average", f"{avg_per_day:.0f} units/day")
+                        st.metric(
+                            "📅 7-Day Forecast", 
+                            f"{total_7_days:.0f} units",
+                            help="Predicted sales for next week"
+                        )
                     with col3:
-                        st.metric("⏰ Stock Lasts", f"{days_of_stock:.0f} days")
+                        st.metric(
+                            "📅 14-Day Forecast", 
+                            f"{total_14_days:.0f} units",
+                            help="Predicted sales for next 2 weeks"
+                        )
+                    with col4:
+                        remaining_after_14_days = current_stock - total_14_days
+                        st.metric(
+                            "📊 Stock After 14 Days", 
+                            f"{remaining_after_14_days:.0f} units",
+                            delta=f"{remaining_after_14_days - current_stock:.0f}",
+                            help="Expected remaining stock after 2 weeks"
+                        )
                     
-                    # Business recommendations
-                    st.markdown("### 💡 Business Recommendations")
-                    if days_of_stock < 15:
-                        reorder_needed = (30 - days_of_stock) * avg_per_day
-                        st.warning(f"⚠️ **Stock Alert:** Need to order ~{reorder_needed:.0f} units soon")
-                    elif days_of_stock > 45:
-                        st.info("📦 **High Stock:** Current inventory is well-stocked")
+                    # PRACTICAL BUSINESS RECOMMENDATIONS
+                    st.markdown("### 💡 Smart Ordering Recommendations")
+                    
+                    # Calculate different scenarios
+                    remaining_after_7_days = current_stock - total_7_days
+                    remaining_after_14_days = current_stock - total_14_days
+                    
+                    # Safety stock recommendation (25% buffer)
+                    safety_stock_needed = total_14_days * 0.25
+                    
+                    if remaining_after_7_days <= 0:
+                        # Critical - will run out within a week
+                        shortage_7_days = abs(remaining_after_7_days)
+                        recommended_order = shortage_7_days + total_14_days + safety_stock_needed
+                        st.error(f"""
+                        🚨 **CRITICAL SHORTAGE ALERT**
+                        - You will run out of stock in **less than 7 days**
+                        - Shortage in 7 days: **{shortage_7_days:.0f} units**
+                        - **URGENT ORDER NEEDED: {recommended_order:.0f} units**
+                        - This covers the shortage + next 14 days + safety buffer
+                        """)
+                        
+                    elif remaining_after_14_days <= 0:
+                        # Will run out within 2 weeks
+                        shortage_14_days = abs(remaining_after_14_days)
+                        recommended_order = shortage_14_days + safety_stock_needed
+                        st.warning(f"""
+                        ⚠️ **ORDER RECOMMENDED**
+                        - Current stock will last: **{(current_stock / avg_per_day):.1f} days**
+                        - Will run short in 14 days by: **{shortage_14_days:.0f} units**
+                        - **RECOMMENDED ORDER: {recommended_order:.0f} units**
+                        - This covers the shortage + safety buffer
+                        """)
+                        
+                    elif remaining_after_14_days <= safety_stock_needed:
+                        # Low stock after 2 weeks
+                        recommended_order = total_14_days  # Restock for next 2 weeks
+                        st.info(f"""
+                        📋 **PLAN AHEAD**
+                        - Stock after 14 days: **{remaining_after_14_days:.0f} units** (low)
+                        - **SUGGESTED ORDER: {recommended_order:.0f} units**
+                        - This maintains healthy inventory levels
+                        - Order timing: **Within next week**
+                        """)
+                        
                     else:
-                        st.success("✅ **Stock OK:** Inventory level is appropriate")
+                        # Stock is sufficient
+                        days_stock_will_last = current_stock / avg_per_day
+                        st.success(f"""
+                        ✅ **STOCK STATUS: GOOD**
+                        - Current stock will last: **{days_stock_will_last:.1f} days**
+                        - After 14 days you'll have: **{remaining_after_14_days:.0f} units**
+                        - **NO IMMEDIATE ORDER NEEDED**
+                        - Next review recommended: **In 1 week**
+                        """)
+                    
+                    # Additional insights
+                    st.markdown("---")
+                    st.markdown("### 📈 Additional Insights")
+                    
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        st.markdown("**📊 Stock Coverage Analysis:**")
+                        coverage_7_days = (current_stock / total_7_days) * 100 if total_7_days > 0 else 100
+                        coverage_14_days = (current_stock / total_14_days) * 100 if total_14_days > 0 else 100
+                        
+                        st.write(f"• **7-day coverage:** {coverage_7_days:.0f}%")
+                        st.write(f"• **14-day coverage:** {coverage_14_days:.0f}%")
+                        
+                        if coverage_7_days < 100:
+                            st.write("🔴 **Risk:** Will run out within a week")
+                        elif coverage_14_days < 100:
+                            st.write("🟡 **Caution:** Will run out within 2 weeks")
+                        else:
+                            st.write("🟢 **Safe:** Stock covers forecast period")
+                    
+                    with col2:
+                        st.markdown("**💰 Financial Impact:**")
+                        if 'מחיר ליחידה (₪)' in product_info:
+                            unit_price = float(product_info.get('מחיר ליחידה (₪)', 0))
+                            if unit_price > 0:
+                                value_7_days = total_7_days * unit_price
+                                value_14_days = total_14_days * unit_price
+                                current_value = current_stock * unit_price
+                                
+                                st.write(f"• **Current stock value:** ₪{current_value:,.0f}")
+                                st.write(f"• **7-day sales value:** ₪{value_7_days:,.0f}")
+                                st.write(f"• **14-day sales value:** ₪{value_14_days:,.0f}")
+                            else:
+                                st.write("• Price information not available")
+                        else:
+                            st.write("• Price information not available")
                     
                     # Simple chart
                     st.markdown("### 📈 Forecast Visualization")

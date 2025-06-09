@@ -880,9 +880,10 @@ elif page == "🔮 Forecasting":
                         
                         # Separator line - FIXED
                         try:
-                            last_date_for_line = pd.Timestamp(df['Date'].max())
+                            # Use string format instead of timestamp arithmetic
+                            last_date_str = df['Date'].max().strftime('%Y-%m-%d')
                             fig.add_vline(
-                                x=last_date_for_line,
+                                x=last_date_str,
                                 line_dash="dot",
                                 line_color="gray",
                                 annotation_text="🔮 Forecast Start",
@@ -891,6 +892,19 @@ elif page == "🔮 Forecasting":
                             st.success("✅ Separator line created")
                         except Exception as line_error:
                             st.warning(f"⚠️ Separator line failed: {line_error}")
+                            # Try alternative method
+                            try:
+                                last_date_ts = pd.Timestamp(df['Date'].max())
+                                fig.add_vline(
+                                    x=last_date_ts,
+                                    line_dash="dot", 
+                                    line_color="gray",
+                                    annotation_text="🔮 Forecast Start",
+                                    annotation_position="top"
+                                )
+                                st.success("✅ Separator line created (method 2)")
+                            except:
+                                st.info("ℹ️ Separator line skipped - chart works fine without it")
                         
                         # Layout
                         method_text = "Advanced ML" if use_ml_model and 'model' in locals() else "Statistical"

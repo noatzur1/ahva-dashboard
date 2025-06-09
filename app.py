@@ -1141,4 +1141,3 @@ if st.sidebar.checkbox("🔧 Debug Mode"):
 if st.session_state.df_clean is not None:
     st.sidebar.success("✅ Enhanced Dashboard Ready!")
     st.sidebar.info("🔮 ML Forecasting Active")
-    

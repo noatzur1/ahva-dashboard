@@ -815,133 +815,45 @@ elif page == "🔮 Forecasting":
                             st.error("❌ Could not generate forecast for selected product.")
                             st.stop()
                     
-                    # SUPER SIMPLE visualization - NO COMPLEX CALCULATIONS
+                    # Simple basic chart - like the original versions
                     st.markdown("---")
-                    st.subheader(f"📈 Sales Forecast for {selected_product}")
+                    st.subheader(f"📈 Forecast Visualization for {selected_product}")
                     
-                    # Show simple data tables first
-                    col1, col2 = st.columns(2)
+                    # Historical data (last 30 days for clarity)
+                    historical_data = product_data.tail(30)
                     
-                    with col1:
-                        st.markdown("**📊 Recent Sales (Last 10 Days)**")
-                        recent_data = product_data.tail(10)[['Date', 'UnitsSold']].copy()
-                        recent_data['Date'] = recent_data['Date'].dt.strftime('%Y-%m-%d')
-                        st.dataframe(recent_data, hide_index=True)
+                    fig = go.Figure()
                     
-                    with col2:
-                        st.markdown("**🔮 AI Forecast (Next 10 Days)**")
-                        forecast_display = future_df[['Date', 'Predicted_Sales']].head(10).copy()
-                        forecast_display['Date'] = forecast_display['Date'].dt.strftime('%Y-%m-%d')
-                        forecast_display['Predicted_Sales'] = forecast_display['Predicted_Sales'].round(0).astype(int)
-                        forecast_display.columns = ['Date', 'Predicted Units']
-                        st.dataframe(forecast_display, hide_index=True)
+                    # Historical data - simple blue line
+                    fig.add_trace(go.Scatter(
+                        x=historical_data['Date'],
+                        y=historical_data['UnitsSold'],
+                        mode='lines+markers',
+                        name='Historical Sales',
+                        line=dict(color='blue', width=2),
+                        marker=dict(size=4)
+                    ))
                     
-                    # Simple metrics
-                    st.markdown("---")
-                    st.markdown("### 📊 Key Numbers")
+                    # Forecast data - simple red line
+                    fig.add_trace(go.Scatter(
+                        x=future_df['Date'],
+                        y=future_df['Predicted_Sales'],
+                        mode='lines+markers',
+                        name='Forecast',
+                        line=dict(color='red', width=2, dash='dash'),
+                        marker=dict(size=4)
+                    ))
                     
-                    recent_avg = product_data['UnitsSold'].tail(7).mean()
-                    forecast_avg = future_df['Predicted_Sales'].mean()
-                    total_forecast = future_df['Predicted_Sales'].sum()
+                    # Basic layout
+                    fig.update_layout(
+                        title=f'Sales Forecast for {selected_product}',
+                        xaxis_title='Date',
+                        yaxis_title='Units Sold',
+                        height=400,
+                        showlegend=True
+                    )
                     
-                    col1, col2, col3, col4 = st.columns(4)
-                    
-                    with col1:
-                        st.metric(
-                            label="📈 Recent Average",
-                            value=f"{recent_avg:.0f} units/day",
-                            help="Average sales in last 7 days"
-                        )
-                    
-                    with col2:
-                        st.metric(
-                            label="🔮 Forecast Average", 
-                            value=f"{forecast_avg:.0f} units/day",
-                            delta=f"{forecast_avg - recent_avg:.0f}",
-                            help="Predicted average for next 30 days"
-                        )
-                    
-                    with col3:
-                        st.metric(
-                            label="📦 Total Forecast",
-                            value=f"{total_forecast:.0f} units",
-                            help="Total units predicted for 30 days"
-                        )
-                    
-                    with col4:
-                        current_stock = product_info['Stock']
-                        days_of_stock = current_stock / forecast_avg if forecast_avg > 0 else 0
-                        st.metric(
-                            label="⏰ Stock Duration",
-                            value=f"{days_of_stock:.0f} days",
-                            help="How long current stock will last"
-                        )
-                    
-                    # Simple chart with basic plotly
-                    try:
-                        st.markdown("---")
-                        st.markdown("### 📈 Visual Forecast")
-                        
-                        # Create simple figure
-                        fig = go.Figure()
-                        
-                        # Add historical data - SIMPLE
-                        historical_last_10 = product_data.tail(10)
-                        fig.add_trace(go.Scatter(
-                            x=list(range(len(historical_last_10))),
-                            y=historical_last_10['UnitsSold'].tolist(),
-                            mode='lines+markers',
-                            name='Recent Sales',
-                            line=dict(color='blue', width=3),
-                            marker=dict(size=8)
-                        ))
-                        
-                        # Add forecast data - SIMPLE  
-                        forecast_x = list(range(len(historical_last_10), len(historical_last_10) + len(future_df)))
-                        fig.add_trace(go.Scatter(
-                            x=forecast_x,
-                            y=future_df['Predicted_Sales'].tolist(),
-                            mode='lines+markers',
-                            name='AI Forecast',
-                            line=dict(color='red', width=3, dash='dash'),
-                            marker=dict(size=8)
-                        ))
-                        
-                        # Simple layout
-                        fig.update_layout(
-                            title="Sales Trend: Historical vs Forecast",
-                            xaxis_title="Time Period",
-                            yaxis_title="Units Sold",
-                            height=400,
-                            showlegend=True
-                        )
-                        
-                        st.plotly_chart(fig, use_container_width=True)
-                        
-                    except Exception as simple_chart_error:
-                        st.warning(f"Chart display issue: {simple_chart_error}")
-                        st.info("📊 The forecast data is shown in the tables above")
-                    
-                    # Business recommendations
-                    st.markdown("---")
-                    st.markdown("### 💡 Business Insights")
-                    
-                    if forecast_avg > recent_avg * 1.1:
-                        st.success(f"📈 **Growth Expected!** AI predicts {((forecast_avg/recent_avg-1)*100):.0f}% increase in daily sales")
-                    elif forecast_avg < recent_avg * 0.9:
-                        st.warning(f"📉 **Decline Expected** AI predicts {((1-forecast_avg/recent_avg)*100):.0f}% decrease in daily sales")
-                    else:
-                        st.info("➡️ **Stable Sales** AI predicts similar performance to recent days")
-                    
-                    # Stock recommendation
-                    if days_of_stock < 10:
-                        st.error(f"🚨 **Low Stock Alert!** Only {days_of_stock:.0f} days of inventory remaining")
-                        reorder_amount = (30 - days_of_stock) * forecast_avg
-                        st.info(f"💡 **Recommendation:** Order {reorder_amount:.0f} additional units")
-                    elif days_of_stock > 60:
-                        st.warning("📦 **High Stock Level** - Consider reducing future orders")
-                    else:
-                        st.success("✅ **Stock Level OK** - Current inventory is appropriate")
+                    st.plotly_chart(fig, use_container_width=True)
                     
                     # Enhanced forecast summary
                     st.subheader("📊 Enhanced Forecast Summary")

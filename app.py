@@ -189,10 +189,9 @@ def prepare_forecast_data_enhanced(df):
             lambda x: x.rolling(window=min(window, len(x)), min_periods=1).mean()
         )
     
+    # FIXED: Simplified trend calculation to avoid date arithmetic issues
     df_forecast['Sales_Trend_7'] = df_forecast.groupby('Product')['UnitsSold'].transform(
-        lambda x: x.rolling(window=min(7, len(x)), min_periods=2).apply(
-            lambda vals: np.polyfit(range(len(vals)), vals, 1)[0] if len(vals) > 1 else 0, raw=False
-        )
+        lambda x: x.pct_change(periods=min(7, len(x)-1)).fillna(0)
     )
     
     df_forecast['Stock_Sales_Ratio'] = df_forecast['Stock'] / (df_forecast['UnitsSold'] + 1)
@@ -275,14 +274,10 @@ def simple_forecast_backup(df, product_name, days=30):
     forecast_data = []
     last_date = pd.to_datetime(product_data['Date'].max())
     
-    # FIXED: Use pd.date_range instead of manual loop
-    future_dates = pd.date_range(
-        start=last_date + pd.Timedelta(days=1),
-        periods=days,
-        freq='D'
-    )
-    
-    for i, future_date in enumerate(future_dates, 1):
+    # SIMPLE version - use DateOffset
+    for i in range(1, days + 1):
+        future_date = last_date + pd.DateOffset(days=i)
+        
         predicted_sales = base_forecast * (1 + growth_rate * i / 30)
         
         day_of_week = future_date.dayofweek
@@ -731,23 +726,15 @@ elif page == "🔮 Forecasting":
                         # Advanced ML Forecasting
                         st.markdown("### 🤖 Advanced ML Forecast Results")
                         
-                        # Create future dates - FIXED VERSION
+                        # Create future dates - SIMPLE VERSION
                         last_date = pd.to_datetime(df['Date'].max())
-                        future_dates = pd.date_range(
-                            start=last_date + pd.Timedelta(days=1),
-                            periods=forecast_days,
-                            freq='D'
-                        )
+                        future_dates = []
+                        for i in range(1, forecast_days + 1):
+                            future_dates.append(last_date + pd.DateOffset(days=i))
                         
-                        # Prepare future data for ML model
+                        # Prepare future data for ML model - SIMPLIFIED
                         future_data = []
                         for date in future_dates:
-                            # FIXED: Simplified month end calculation
-                            try:
-                                is_month_end = (date + pd.Timedelta(days=1)).month != date.month
-                            except:
-                                is_month_end = False
-                            
                             row = {
                                 'Date': date,
                                 'Product': selected_product,
@@ -758,7 +745,7 @@ elif page == "🔮 Forecasting":
                                 'DayOfMonth': date.day,
                                 'IsWeekend': 1 if date.dayofweek >= 5 else 0,
                                 'IsMonthStart': 1 if date.day == 1 else 0,
-                                'IsMonthEnd': 1 if is_month_end else 0,  # FIXED
+                                'IsMonthEnd': 1 if date.is_month_end else 0,  # Use built-in method
                                 'Product_encoded': pd.Categorical([selected_product], categories=df['Product'].unique()).codes[0],
                                 'Category_encoded': pd.Categorical([product_info['Category']], categories=df['Category'].unique()).codes[0],
                                 'Stock': product_info['Stock'],
@@ -768,7 +755,7 @@ elif page == "🔮 Forecasting":
                                 'Sales_MA_7': product_data['UnitsSold'].tail(7).mean(),
                                 'Sales_MA_14': product_data['UnitsSold'].tail(14).mean(),
                                 'Sales_MA_30': product_data['UnitsSold'].tail(30).mean(),
-                                'Sales_Trend_7': 0,
+                                'Sales_Trend_7': 0,  # Simplified
                                 'Stock_Sales_Ratio': product_info['Stock'] / (product_data['UnitsSold'].tail(7).mean() + 1),
                                 'Product_vs_Category_Performance': 1.0
                             }

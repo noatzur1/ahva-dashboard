@@ -725,13 +725,21 @@ elif page == "🔮 Forecasting":
                         # Advanced ML Forecasting
                         st.markdown("### 🤖 Advanced ML Forecast Results")
                         
-                        # Create future dates - PROPERLY FIXED
+                        # Create future dates - FIXED VERSION
                         last_date = pd.to_datetime(df['Date'].max())
-                        future_dates = [last_date + pd.Timedelta(days=i) for i in range(1, forecast_days + 1)]
+                        future_dates = pd.date_range(
+                            start=last_date + pd.Timedelta(days=1),
+                            periods=forecast_days,
+                            freq='D'
+                        )
                         
                         # Prepare future data for ML model
                         future_data = []
                         for date in future_dates:
+                            # Calculate correct month end
+                            next_month = (date.replace(day=28) + pd.Timedelta(days=4)).replace(day=1)
+                            last_day_of_month = (next_month - pd.Timedelta(days=1)).day
+                            
                             row = {
                                 'Date': date,
                                 'Product': selected_product,
@@ -742,7 +750,7 @@ elif page == "🔮 Forecasting":
                                 'DayOfMonth': date.day,
                                 'IsWeekend': 1 if date.dayofweek >= 5 else 0,
                                 'IsMonthStart': 1 if date.day == 1 else 0,
-                                'IsMonthEnd': 1 if date.day >= 28 else 0,  # Simplified month end check
+                                'IsMonthEnd': 1 if date.day == last_day_of_month else 0,  # FIXED
                                 'Product_encoded': pd.Categorical([selected_product], categories=df['Product'].unique()).codes[0],
                                 'Category_encoded': pd.Categorical([product_info['Category']], categories=df['Category'].unique()).codes[0],
                                 'Stock': product_info['Stock'],

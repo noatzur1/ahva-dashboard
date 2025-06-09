@@ -819,82 +819,98 @@ elif page == "🔮 Forecasting":
                     st.markdown("---")
                     st.subheader(f"📈 Forecast Visualization for {selected_product}")
                     
-                    # Historical data (last 90 days or all available)
-                    historical_data = product_data.tail(min(90, len(product_data)))
-                    
-                    fig = go.Figure()
-                    
-                    # Historical data
-                    fig.add_trace(go.Scatter(
-                        x=historical_data['Date'],
-                        y=historical_data['UnitsSold'],
-                        mode='lines+markers',
-                        name='📊 Historical Sales',
-                        line=dict(color='#2E86AB', width=3),
-                        marker=dict(size=6, color='#2E86AB'),
-                        hovertemplate='<b>Historical</b><br>Date: %{x}<br>Sales: %{y}<extra></extra>'
-                    ))
-                    
-                    # Forecast data
-                    fig.add_trace(go.Scatter(
-                        x=future_df['Date'],
-                        y=future_df['Predicted_Sales'],
-                        mode='lines+markers',
-                        name='🔮 Forecast',
-                        line=dict(color='#F24236', width=3, dash='dash'),
-                        marker=dict(size=6, color='#F24236'),
-                        hovertemplate='<b>Forecast</b><br>Date: %{x}<br>Predicted: %{y:.1f}<extra></extra>'
-                    ))
-                    
-                    # Confidence bands
-                    if show_confidence:
-                        uncertainty = future_df['Predicted_Sales'] * confidence_pct
+                    try:
+                        # Historical data (last 90 days or all available)
+                        historical_data = product_data.tail(min(90, len(product_data)))
                         
-                        # Upper bound
+                        fig = go.Figure()
+                        
+                        # Historical data
                         fig.add_trace(go.Scatter(
-                            x=future_df['Date'],
-                            y=future_df['Predicted_Sales'] + uncertainty,
-                            fill=None,
-                            mode='lines',
-                            line_color='rgba(242, 66, 54, 0)',
-                            showlegend=False,
-                            hoverinfo='skip'
+                            x=historical_data['Date'],
+                            y=historical_data['UnitsSold'],
+                            mode='lines+markers',
+                            name='📊 Historical Sales',
+                            line=dict(color='#2E86AB', width=3),
+                            marker=dict(size=6, color='#2E86AB'),
+                            hovertemplate='<b>Historical</b><br>Date: %{x}<br>Sales: %{y}<extra></extra>'
                         ))
                         
-                        # Lower bound
+                        # Forecast data
                         fig.add_trace(go.Scatter(
                             x=future_df['Date'],
-                            y=np.maximum(future_df['Predicted_Sales'] - uncertainty, 0),
-                            fill='tonexty',
-                            mode='lines',
-                            line_color='rgba(242, 66, 54, 0)',
-                            name=f'📈 {confidence_level} Confidence',
-                            fillcolor='rgba(242, 66, 54, 0.2)',
-                            hovertemplate=f'<b>Confidence Band</b><br>{confidence_level}<extra></extra>'
+                            y=future_df['Predicted_Sales'],
+                            mode='lines+markers',
+                            name='🔮 Forecast',
+                            line=dict(color='#F24236', width=3, dash='dash'),
+                            marker=dict(size=6, color='#F24236'),
+                            hovertemplate='<b>Forecast</b><br>Date: %{x}<br>Predicted: %{y:.1f}<extra></extra>'
                         ))
-                    
-                    # Separator line
-                    fig.add_vline(
-                        x=last_date,
-                        line_dash="dot",
-                        line_color="gray",
-                        annotation_text="🔮 Forecast Start",
-                        annotation_position="top"
-                    )
-                    
-                    # Layout
-                    method_text = "Advanced ML" if use_ml_model and 'model' in locals() else "Statistical"
-                    fig.update_layout(
-                        title=f'🤖 {method_text} Sales Forecast for {selected_product}',
-                        xaxis_title='📅 Date',
-                        yaxis_title='📦 Units Sold',
-                        height=500,
-                        showlegend=True,
-                        hovermode='x unified',
-                        legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01)
-                    )
-                    
-                    st.plotly_chart(fig, use_container_width=True)
+                        
+                        # Confidence bands - FIXED
+                        if show_confidence:
+                            try:
+                                uncertainty = future_df['Predicted_Sales'] * confidence_pct
+                                
+                                # Upper bound
+                                fig.add_trace(go.Scatter(
+                                    x=future_df['Date'],
+                                    y=future_df['Predicted_Sales'] + uncertainty,
+                                    fill=None,
+                                    mode='lines',
+                                    line_color='rgba(242, 66, 54, 0)',
+                                    showlegend=False,
+                                    hoverinfo='skip'
+                                ))
+                                
+                                # Lower bound
+                                fig.add_trace(go.Scatter(
+                                    x=future_df['Date'],
+                                    y=np.maximum(future_df['Predicted_Sales'] - uncertainty, 0),
+                                    fill='tonexty',
+                                    mode='lines',
+                                    line_color='rgba(242, 66, 54, 0)',
+                                    name=f'📈 {confidence_level} Confidence',
+                                    fillcolor='rgba(242, 66, 54, 0.2)',
+                                    hovertemplate=f'<b>Confidence Band</b><br>{confidence_level}<extra></extra>'
+                                ))
+                                st.success("✅ Confidence bands created")
+                            except Exception as conf_error:
+                                st.warning(f"⚠️ Confidence bands failed: {conf_error}")
+                        
+                        # Separator line - FIXED
+                        try:
+                            last_date_for_line = pd.Timestamp(df['Date'].max())
+                            fig.add_vline(
+                                x=last_date_for_line,
+                                line_dash="dot",
+                                line_color="gray",
+                                annotation_text="🔮 Forecast Start",
+                                annotation_position="top"
+                            )
+                            st.success("✅ Separator line created")
+                        except Exception as line_error:
+                            st.warning(f"⚠️ Separator line failed: {line_error}")
+                        
+                        # Layout
+                        method_text = "Advanced ML" if use_ml_model and 'model' in locals() else "Statistical"
+                        fig.update_layout(
+                            title=f'🤖 {method_text} Sales Forecast for {selected_product}',
+                            xaxis_title='📅 Date',
+                            yaxis_title='📦 Units Sold',
+                            height=500,
+                            showlegend=True,
+                            hovermode='x unified',
+                            legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01)
+                        )
+                        
+                        st.plotly_chart(fig, use_container_width=True)
+                        st.success("✅ Chart displayed successfully")
+                        
+                    except Exception as viz_error:
+                        st.error(f"❌ Visualization error: {viz_error}")
+                        st.info("📊 Showing basic forecast data instead:")
+                        st.dataframe(future_df[['Date', 'Predicted_Sales']].head(10))
                     
                     # Enhanced forecast summary
                     st.subheader("📊 Enhanced Forecast Summary")

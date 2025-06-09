@@ -699,17 +699,13 @@ elif page == "🔮 Forecasting":
                 use_ml_model = False
                 st.info("📊 Using Statistical forecasting method with trend analysis.")
             
-            # Product selection for forecasting
+            # Product selection for forecasting - SIMPLIFIED
             st.markdown("---")
-            st.subheader("📊 Generate Forecast")
+            st.subheader("📊 Generate 14-Day Forecast")
             
-            col1, col2 = st.columns(2)
-            with col1:
-                selected_product = st.selectbox("🏷️ Select Product:", df['Product'].unique())
-            with col2:
-                show_confidence = st.checkbox("📈 Show Confidence Bands", value=True)
+            selected_product = st.selectbox("🏷️ Select Product:", df['Product'].unique())
             
-            if st.button("🔮 Generate Enhanced Forecast", type="primary"):
+            if st.button("🔮 Generate 14-Day Forecast", type="primary"):
                 try:
                     # Fixed 14-day forecast period
                     forecast_days = 14
@@ -807,8 +803,8 @@ elif page == "🔮 Forecasting":
                             st.error("❌ Could not generate forecast for selected product.")
                             st.stop()
                     
-                    # Display forecast results - SIMPLIFIED
-                    st.markdown("### 🎯 14-Day Sales Forecast Analysis")
+                    # Display results - NO DAILY TABLES
+                    st.markdown("### 🎯 14-Day Forecast Analysis")
                     
                     # Business metrics - PRACTICAL RECOMMENDATIONS BASED ON CURRENT STOCK
                     total_7_days = future_df['Predicted_Sales'].head(7).sum()
@@ -944,12 +940,12 @@ elif page == "🔮 Forecasting":
                         else:
                             st.write("• Price information not available")
                     
-                    # Simple forecast chart - FORECAST ONLY
-                    st.markdown("### 📈 14-Day Forecast Visualization")
+                    # FORECAST CHART ONLY - NO HISTORICAL DATA
+                    st.markdown("### 📈 14-Day Forecast Chart")
                     
                     fig = go.Figure()
                     
-                    # Forecast data only - clean visualization
+                    # ONLY forecast data - clean blue line
                     fig.add_trace(go.Scatter(
                         x=future_df['Date'],
                         y=future_df['Predicted_Sales'],
@@ -959,13 +955,13 @@ elif page == "🔮 Forecasting":
                         marker=dict(size=6, color='#1f77b4')
                     ))
                     
-                    # Basic layout
+                    # Clean layout
                     fig.update_layout(
-                        title=f'14-Day Sales Forecast for {selected_product}',
+                        title=f'Sales Forecast: {selected_product}',
                         xaxis_title='Date',
-                        yaxis_title='Predicted Units Sold',
+                        yaxis_title='Predicted Units',
                         height=400,
-                        showlegend=True
+                        showlegend=False
                     )
                     
                     st.plotly_chart(fig, use_container_width=True)

@@ -815,115 +815,135 @@ elif page == "🔮 Forecasting":
                             st.error("❌ Could not generate forecast for selected product.")
                             st.stop()
                     
-                    # Create enhanced visualization
+                    # Create CLEAR and SIMPLE visualization
                     st.markdown("---")
-                    st.subheader(f"📈 Forecast Visualization for {selected_product}")
+                    st.subheader(f"📈 Forecast Results for {selected_product}")
                     
                     try:
-                        # Historical data (last 90 days or all available)
-                        historical_data = product_data.tail(min(90, len(product_data)))
+                        # Get last 30 days of historical data for cleaner view
+                        historical_data = product_data.tail(30)
                         
                         fig = go.Figure()
                         
-                        # Historical data
+                        # Historical data - CLEAR BLUE LINE
                         fig.add_trace(go.Scatter(
                             x=historical_data['Date'],
                             y=historical_data['UnitsSold'],
                             mode='lines+markers',
-                            name='📊 Historical Sales',
-                            line=dict(color='#2E86AB', width=3),
-                            marker=dict(size=6, color='#2E86AB'),
+                            name='📊 Historical Sales (Last 30 Days)',
+                            line=dict(color='#1f77b4', width=3),
+                            marker=dict(size=8, color='#1f77b4'),
                             hovertemplate='<b>Historical</b><br>Date: %{x}<br>Sales: %{y}<extra></extra>'
                         ))
                         
-                        # Forecast data
+                        # Add a gap day for visual separation
+                        last_historical_date = historical_data['Date'].max()
+                        first_forecast_date = future_df['Date'].min()
+                        
+                        # Forecast data - CLEAR RED LINE  
                         fig.add_trace(go.Scatter(
                             x=future_df['Date'],
                             y=future_df['Predicted_Sales'],
                             mode='lines+markers',
-                            name='🔮 Forecast',
-                            line=dict(color='#F24236', width=3, dash='dash'),
-                            marker=dict(size=6, color='#F24236'),
-                            hovertemplate='<b>Forecast</b><br>Date: %{x}<br>Predicted: %{y:.1f}<extra></extra>'
+                            name='🔮 AI Forecast (Next 30 Days)',
+                            line=dict(color='#d62728', width=4, dash='dash'),
+                            marker=dict(size=8, color='#d62728'),
+                            hovertemplate='<b>AI Forecast</b><br>Date: %{x}<br>Predicted: %{y:.0f} units<extra></extra>'
                         ))
                         
-                        # Confidence bands - FIXED
-                        if show_confidence:
-                            try:
-                                uncertainty = future_df['Predicted_Sales'] * confidence_pct
-                                
-                                # Upper bound
-                                fig.add_trace(go.Scatter(
-                                    x=future_df['Date'],
-                                    y=future_df['Predicted_Sales'] + uncertainty,
-                                    fill=None,
-                                    mode='lines',
-                                    line_color='rgba(242, 66, 54, 0)',
-                                    showlegend=False,
-                                    hoverinfo='skip'
-                                ))
-                                
-                                # Lower bound
-                                fig.add_trace(go.Scatter(
-                                    x=future_df['Date'],
-                                    y=np.maximum(future_df['Predicted_Sales'] - uncertainty, 0),
-                                    fill='tonexty',
-                                    mode='lines',
-                                    line_color='rgba(242, 66, 54, 0)',
-                                    name=f'📈 {confidence_level} Confidence',
-                                    fillcolor='rgba(242, 66, 54, 0.2)',
-                                    hovertemplate=f'<b>Confidence Band</b><br>{confidence_level}<extra></extra>'
-                                ))
-                                st.success("✅ Confidence bands created")
-                            except Exception as conf_error:
-                                st.warning(f"⚠️ Confidence bands failed: {conf_error}")
-                        
-                        # Separator line - FIXED
-                        try:
-                            # Use string format instead of timestamp arithmetic
-                            last_date_str = df['Date'].max().strftime('%Y-%m-%d')
-                            fig.add_vline(
-                                x=last_date_str,
-                                line_dash="dot",
-                                line_color="gray",
-                                annotation_text="🔮 Forecast Start",
-                                annotation_position="top"
-                            )
-                            st.success("✅ Separator line created")
-                        except Exception as line_error:
-                            st.warning(f"⚠️ Separator line failed: {line_error}")
-                            # Try alternative method
-                            try:
-                                last_date_ts = pd.Timestamp(df['Date'].max())
-                                fig.add_vline(
-                                    x=last_date_ts,
-                                    line_dash="dot", 
-                                    line_color="gray",
-                                    annotation_text="🔮 Forecast Start",
-                                    annotation_position="top"
-                                )
-                                st.success("✅ Separator line created (method 2)")
-                            except:
-                                st.info("ℹ️ Separator line skipped - chart works fine without it")
-                        
-                        # Layout
-                        method_text = "Advanced ML" if use_ml_model and 'model' in locals() else "Statistical"
-                        fig.update_layout(
-                            title=f'🤖 {method_text} Sales Forecast for {selected_product}',
-                            xaxis_title='📅 Date',
-                            yaxis_title='📦 Units Sold',
-                            height=500,
-                            showlegend=True,
-                            hovermode='x unified',
-                            legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01)
+                        # Add CLEAR vertical line separator
+                        fig.add_vline(
+                            x=last_historical_date,
+                            line_dash="solid",
+                            line_color="red",
+                            line_width=3,
+                            annotation_text="🔮 FORECAST STARTS HERE",
+                            annotation_position="top",
+                            annotation_font_size=14,
+                            annotation_font_color="red"
                         )
                         
+                        # Confidence bands - OPTIONAL
+                        if show_confidence:
+                            uncertainty = future_df['Predicted_Sales'] * confidence_pct
+                            
+                            fig.add_trace(go.Scatter(
+                                x=future_df['Date'].tolist() + future_df['Date'].tolist()[::-1],
+                                y=(future_df['Predicted_Sales'] + uncertainty).tolist() + 
+                                  (np.maximum(future_df['Predicted_Sales'] - uncertainty, 0)).tolist()[::-1],
+                                fill='toself',
+                                fillcolor='rgba(214, 39, 40, 0.2)',
+                                line=dict(color='rgba(255,255,255,0)'),
+                                name=f'📈 {confidence_level} Confidence Range',
+                                hoverinfo='skip'
+                            ))
+                        
+                        # CLEAR layout
+                        fig.update_layout(
+                            title=dict(
+                                text=f'📊 Sales Forecast: {selected_product}<br><sub>Historical vs AI Prediction</sub>',
+                                font_size=18,
+                                x=0.5
+                            ),
+                            xaxis_title='📅 Date',
+                            yaxis_title='📦 Units Sold',
+                            height=600,
+                            showlegend=True,
+                            hovermode='x unified',
+                            legend=dict(
+                                yanchor="top", 
+                                y=0.99, 
+                                xanchor="left", 
+                                x=0.01,
+                                bgcolor="rgba(255,255,255,0.8)",
+                                bordercolor="rgba(0,0,0,0.2)",
+                                borderwidth=1
+                            ),
+                            plot_bgcolor='white',
+                            paper_bgcolor='white'
+                        )
+                        
+                        # Add grid for better readability
+                        fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='lightgray')
+                        fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='lightgray')
+                        
                         st.plotly_chart(fig, use_container_width=True)
-                        st.success("✅ Chart displayed successfully")
+                        
+                        # CLEAR summary below the chart
+                        st.markdown("### 📊 What This Chart Shows:")
+                        
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.markdown("""
+                            **🔵 Blue Line (Historical):**
+                            - Your actual sales from the last 30 days
+                            - Real data from your business
+                            - Shows your current performance pattern
+                            """)
+                        
+                        with col2:
+                            st.markdown("""
+                            **🔴 Red Line (Forecast):**
+                            - AI prediction for the next 30 days
+                            - Based on patterns from your 999 data points
+                            - Considers seasonality, trends, and stock levels
+                            """)
+                        
+                        # Show key insights
+                        avg_historical = historical_data['UnitsSold'].mean()
+                        avg_forecast = future_df['Predicted_Sales'].mean()
+                        trend = "📈 Increasing" if avg_forecast > avg_historical else "📉 Decreasing" if avg_forecast < avg_historical * 0.95 else "➡️ Stable"
+                        
+                        st.info(f"""
+                        **🎯 Key Insight:** 
+                        - **Historical Average:** {avg_historical:.0f} units/day
+                        - **Forecast Average:** {avg_forecast:.0f} units/day  
+                        - **Trend:** {trend}
+                        """)
                         
                     except Exception as viz_error:
                         st.error(f"❌ Visualization error: {viz_error}")
-                        st.info("📊 Showing basic forecast data instead:")
+                        st.info("📊 Showing forecast data instead:")
                         st.dataframe(future_df[['Date', 'Predicted_Sales']].head(10))
                     
                     # Enhanced forecast summary

@@ -1,30 +1,4 @@
-# Business metrics - FOCUS ON CURRENT STOCK
-                    total_7_days = future_df['Predicted_Sales'].head(7).sum()
-                    total_14_days = future_df['Predicted_Sales'].head(14).sum()
-                    avg_per_day = future_df['Predicted_Sales'].mean()
-                    
-                    # GET CURRENT STOCK - most recent entry for this product
-                    current_stock = float(product_info['Stock'])
-                    
-                    # Calculate coverage for practical periods
-                    days_coverage_current = current_stock / avg_per_day if avg_per_day > 0 else 0
-                    
-                    st.markdown("---")
-                    st.markdown("### 📊 Current Stock Analysis")
-                    
-                    col1, col2, col3, col4 = st.columns(4)
-                    
-                    with col1:
-                        st.metric(
-                            "📦 Current Stock", 
-                            f"{current_stock:.0f} units",
-                            help="Your actual current inventory level"
-                        )
-                    with col2:
-                        st.metric(
-                            "📅 7-Day Forecast", 
-                            f"{total_7_days:.0f} units",
-                            help="import streamlit as st
+import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.express as px
@@ -106,7 +80,6 @@ def clean_data(df):
                 try:
                     if 1 <= date_val <= 100000:
                         base_date = pd.to_datetime('1899-12-30')
-                        # FIXED: Use pd.Timedelta instead of direct addition
                         return base_date + pd.Timedelta(days=int(date_val))
                 except:
                     pass
@@ -278,7 +251,7 @@ def build_enhanced_forecast_model(df_forecast):
     return model, available_features, mae, rmse, r2
 
 def simple_forecast_backup(df, product_name, days=30):
-    """חיזוי פשוט לגיבוי במקרה של כשל במודל ML - FIXED DATE ISSUE"""
+    """חיזוי פשוט לגיבוי במקרה של כשל במודל ML"""
     product_data = df[df['Product'] == product_name].copy()
     
     if len(product_data) == 0:
@@ -301,9 +274,7 @@ def simple_forecast_backup(df, product_name, days=30):
     forecast_data = []
     last_date = product_data['Date'].max()
     
-    # FIXED: Use string conversion to avoid date arithmetic issues
     for i in range(1, days + 1):
-        # Convert to timestamp, add days, then back to datetime
         future_date = pd.Timestamp(last_date) + pd.Timedelta(days=i)
         
         predicted_sales = base_forecast * (1 + growth_rate * i / 30)
@@ -754,7 +725,7 @@ elif page == "🔮 Forecasting":
                         # Advanced ML Forecasting
                         st.markdown("### 🤖 Advanced ML Forecast Results")
                         
-                        # Create future dates - SIMPLE AND WORKING
+                        # Create future dates
                         last_date = df['Date'].max()
                         future_dates = []
                         for i in range(1, forecast_days + 1):

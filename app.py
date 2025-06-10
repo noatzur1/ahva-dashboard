@@ -373,7 +373,7 @@ if page == "🏠 HOME":
         else:
             filtered_df = df
 
-        # KPI CALCULATIONS
+        # KPI CALCULATIONS - Keep all existing logic
         st.markdown("---")
         st.subheader("📊 Key Performance Indicators")
         
@@ -390,24 +390,11 @@ if page == "🏠 HOME":
             missing_units = 0
 
         efficiency = (total_demand / total_stock) * 100 if total_stock > 0 else 0
+        shortage_rate = (missing_units / total_demand) * 100 if total_demand > 0 else 0
 
+        # Display only the three requested KPIs
         st.markdown(f"""
         <div class="kpi-container">
-            <div class="kpi-card kpi-blue">
-                <div class="kpi-title">❌ Missing Units</div>
-                <div class="kpi-value">{missing_units:,}</div>
-                <div class="kpi-subtext">Total Shortage Quantity</div>
-            </div>
-            <div class="kpi-card kpi-green">
-                <div class="kpi-title">📦 Total Stock</div>
-                <div class="kpi-value">{total_stock:,}</div>
-                <div class="kpi-subtext">Available Inventory</div>
-            </div>
-            <div class="kpi-card kpi-red">
-                <div class="kpi-title">⚠️ Shortage Events</div>
-                <div class="kpi-value">{shortages:,}</div>
-                <div class="kpi-subtext">Times Demand > Stock</div>
-            </div>
             <div class="kpi-card kpi-purple">
                 <div class="kpi-title">📊 Total Demand</div>
                 <div class="kpi-value">{total_demand:,}</div>
@@ -417,6 +404,11 @@ if page == "🏠 HOME":
                 <div class="kpi-title">📈 Efficiency</div>
                 <div class="kpi-value">{efficiency:.1f}%</div>
                 <div class="kpi-subtext">Demand/Stock Ratio</div>
+            </div>
+            <div class="kpi-card kpi-red">
+                <div class="kpi-title">⚠️ Shortage Rate</div>
+                <div class="kpi-value">{shortage_rate:.1f}%</div>
+                <div class="kpi-subtext">Missing Units / Total Demand</div>
             </div>
         </div>
         """, unsafe_allow_html=True)
